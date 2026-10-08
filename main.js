@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   AIR, WATER, BEDROCK, CS, SEA_LEVEL, BLOCK_HARDNESS, BLOCK_TOOL_REQ,
-  CRAFTING_TABLE, FURNACE
+  CRAFTING_TABLE, FURNACE, BEEF, PORK
 } from './constants.js';
 import { input } from './input.js';
 import { scene, camera, renderer, highlight } from './scene.js';
@@ -17,7 +17,8 @@ import { isBlock } from './blocks.js';
 import { isTool, getTool, CREATIVE_ITEMS } from './items.js';
 import {
   selectSlot, getActiveSlot, updateInfo, refreshHotbar,
-  openUI, closeUI, isInventoryOpen, getUiContext, tickFurnace
+  openUI, closeUI, isInventoryOpen, getUiContext, tickFurnace,
+  forceRenderHearts
 } from './hud.js';
 import {
   GameMode, getMode, setMode, HOTBAR_SIZE, STACK_MAX,
@@ -60,10 +61,16 @@ function toggleMode() {
   const newMode = getMode() === GameMode.CREATIVE ? GameMode.SURVIVAL : GameMode.CREATIVE;
   setMode(newMode);
   resetBreaking();
-  if (newMode === GameMode.CREATIVE) giveCreativeInventory();
-  else invClear();
+  if (newMode === GameMode.CREATIVE) {
+    giveCreativeInventory();
+  } else {
+    invClear();
+    player.flying = false;
+    player.hp = player.maxHp;
+  }
   updateModeUI();
   refreshHotbar();
+  forceRenderHearts();
 }
 modeBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMode(); });
 
@@ -155,8 +162,17 @@ function updateBreaking(dt, hit) {
 /* ============================================================
    УСТАНОВКА / ИСПОЛЬЗОВАНИЕ
    ============================================================ */
+function eatFood(id) {
+  if (player.hp >= player.maxHp) return;
+  const heal = id === BEEF ? 4 : 3;
+  player.hp = Math.min(player.maxHp, player.hp + heal);
+  const i = getActiveSlot();
+  if (getMode() === GameMode.SURVIVAL) invRemoveFromSlot(i, 1);
+  refreshHotbar();
+  forceRenderHearts();
+}
+
 function tryPlaceOrUse(hit) {
-  // сначала: если смотрим на верстак/печь — открыть UI
   if (hit.block === CRAFTING_TABLE) { openUI('crafting'); return; }
   if (hit.block === FURNACE)        { openUI('furnace');  return; }
 
@@ -203,7 +219,9 @@ addEventListener('keydown', (e) => {
   }
   if (isInventoryOpen()) return; // остальное — только в игре
 
-  if (e.code === 'KeyF') player.flying = !player.flying;
+  if (e.code === 'KeyF' && getMode() === GameMode.CREATIVE) {
+    player.flying = !player.flying;
+  }
   if (e.code.startsWith('Digit')) {
     const n = parseInt(e.code.slice(5), 10);
     if (n >= 1 && n <= HOTBAR_SIZE) selectSlot(n - 1);
@@ -255,9 +273,12 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       while (o && !o.userData.mob) o = o.parent;
       if (o && o.userData.mob) {
         const t = currentTool();
-        const base = getMode() === GameMode.SURVIVAL ? 3 : 6;
-        const bonus = t && t.type === 'sword' ? t.damage : 0;
-        o.userData.mob.damage(base + bonus);
+        let dmg = 1;  // базовый урон руки
+        if (t && t.type === 'sword') {
+          const swordDmg = { wood: 4, stone: 5, copper: 5, iron: 6, gold: 6, diamond: 7 };
+          dmg = swordDmg[t.material] || 4;
+        }
+        o.userData.mob.damage(dmg);
         return;
       }
     }
@@ -272,7 +293,13 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
     // выживание — через updateBreaking
   } else if (e.button === 2) {
-    tryPlaceOrUse(hit);
+    // еда
+    const s = slots[getActiveSlot()];
+    if (s && (s.id === BEEF || s.id === PORK)) {
+      eatFood(s.id);
+      return;
+    }
+    if (hit) tryPlaceOrUse(hit);
   }
 });
 renderer.domElement.addEventListener('mouseup', (e) => {
@@ -309,7 +336,7 @@ function animate() {
   }
 
   updateChunks(player.pos.x, player.pos.z);
-  updateMobs(dt);
+  if (updateMobs(dt)) refreshHotbar();
 
   camera.getWorldDirection(forwardVec);
   const hit = raycastVoxel(camera.position, forwardVec, 6);

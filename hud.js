@@ -414,6 +414,7 @@ export function updateInfo(dt) {
     fpsShown = Math.round(fpsFrames / fpsAcc);
     fpsAcc = 0; fpsFrames = 0;
   }
+  renderHeartsIfChanged();
   const b = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.2), Math.floor(player.pos.z));
   const blockName = BLOCK_NAMES[b] || '—';
   infoEl.innerHTML =
@@ -423,4 +424,80 @@ export function updateInfo(dt) {
     `Под ногами: <b>${blockName}</b><br>` +
     `Мобы: <b>${mobs.length}</b> · Чанков: <b>${world.chunks.size}</b><br>` +
     `Состояние: <b>${player.flying ? 'полёт' : (player.inWater ? 'плавание' : (player.sprinting ? 'бег' : (player.crouching ? 'присед' : 'ходьба')))}</b>`;
+}
+
+/* ============================================================
+   СЕРДЕЧКИ
+   ============================================================ */
+const heartsEl = document.getElementById('hearts');
+let lastHpShown = -1;
+
+function makeHeartSVG(fill) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('class', 'heart');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+
+  const path = 'M10 17.5 C4 12 1.5 8.5 1.5 6 C1.5 3 4 1.5 6.5 1.5 C8.5 1.5 10 3.5 10 3.5 C10 3.5 11.5 1.5 13.5 1.5 C16 1.5 18.5 3 18.5 6 C18.5 8.5 16 12 10 17.5 Z';
+
+  const bg = document.createElementNS(NS, 'path');
+  bg.setAttribute('d', path);
+  bg.setAttribute('fill', '#3a1010');
+  svg.appendChild(bg);
+
+  if (fill > 0) {
+    const fp = document.createElementNS(NS, 'path');
+    fp.setAttribute('d', path);
+    fp.setAttribute('fill', '#ff2a2a');
+    if (fill < 1) {
+      const clipId = 'hclip' + Math.random().toString(36).slice(2, 9);
+      const clip = document.createElementNS(NS, 'clipPath');
+      clip.setAttribute('id', clipId);
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', '0');
+      rect.setAttribute('y', '0');
+      rect.setAttribute('width', String(20 * fill));
+      rect.setAttribute('height', '20');
+      clip.appendChild(rect);
+      svg.appendChild(clip);
+      fp.setAttribute('clip-path', `url(#${clipId})`);
+    }
+    svg.appendChild(fp);
+  }
+
+  const outline = document.createElementNS(NS, 'path');
+  outline.setAttribute('d', path);
+  outline.setAttribute('fill', 'none');
+  outline.setAttribute('stroke', '#000');
+  outline.setAttribute('stroke-width', '1.1');
+  svg.appendChild(outline);
+
+  return svg;
+}
+
+function renderHeartsIfChanged() {
+  if (!heartsEl) return;
+  const creative = getMode() === GameMode.CREATIVE;
+  heartsEl.classList.toggle('hidden', creative);
+  if (creative) return;
+
+  const hp = Math.max(0, Math.min(player.maxHp, player.hp));
+  if (hp === lastHpShown) return;
+  lastHpShown = hp;
+
+  const full = Math.floor(hp / 2);
+  const half = (hp % 2) === 1;
+  const empty = 10 - full - (half ? 1 : 0);
+
+  heartsEl.innerHTML = '';
+  for (let i = 0; i < full; i++)  heartsEl.appendChild(makeHeartSVG(1));
+  if (half)                        heartsEl.appendChild(makeHeartSVG(0.5));
+  for (let i = 0; i < empty; i++) heartsEl.appendChild(makeHeartSVG(0));
+}
+
+export function forceRenderHearts() {
+  lastHpShown = -1;
+  renderHeartsIfChanged();
 }

@@ -8,6 +8,7 @@ import {
   IRON_PICKAXE, IRON_AXE, IRON_SHOVEL, IRON_SWORD,
   GOLD_PICKAXE, GOLD_AXE, GOLD_SHOVEL, GOLD_SWORD,
   DIAMOND_PICKAXE, DIAMOND_AXE, DIAMOND_SHOVEL, DIAMOND_SWORD,
+  BEEF, PORK,
   WATER
 } from './constants.js';
 
@@ -19,7 +20,8 @@ export const ITEM_COLORS = {
   [BEDROCK]: '#3e3e42', [PLANKS]: '#b28a54',
   [CRAFTING_TABLE]: '#a67848', [FURNACE]: '#6b6b6f',
   [STICK]: '#8a5a2a', [IRON_INGOT]: '#d8d8d8',
-  [COPPER_INGOT]: '#c87533', [GOLD_INGOT]: '#ffd700'
+  [COPPER_INGOT]: '#c87533', [GOLD_INGOT]: '#ffd700',
+  [BEEF]: '#8b2f2f', [PORK]: '#e8a0a0'
 };
 
 const MAT_COLOR = {
@@ -68,7 +70,8 @@ export function itemName(id) {
     [COPPER]: 'Медная руда', [GOLD]: 'Золотая руда', [DIAMOND]: 'Алмазная руда',
     [BEDROCK]: 'Бедрок', [PLANKS]: 'Доски', [CRAFTING_TABLE]: 'Верстак',
     [FURNACE]: 'Печь', [STICK]: 'Палка', [IRON_INGOT]: 'Железный слиток',
-    [COPPER_INGOT]: 'Медный слиток', [GOLD_INGOT]: 'Золотой слиток'
+    [COPPER_INGOT]: 'Медный слиток', [GOLD_INGOT]: 'Золотой слиток',
+    [BEEF]: 'Говядина', [PORK]: 'Свинина'
   };
   if (names[id]) return names[id];
   const t = TOOLS[id];
@@ -93,5 +96,6 @@ export const CREATIVE_ITEMS = [
   WOODEN_SHOVEL, STONE_SHOVEL, COPPER_SHOVEL, IRON_SHOVEL,
   GOLD_SHOVEL, DIAMOND_SHOVEL,
   WOODEN_SWORD, STONE_SWORD, COPPER_SWORD, IRON_SWORD,
-  GOLD_SWORD, DIAMOND_SWORD
+  GOLD_SWORD, DIAMOND_SWORD,
+  BEEF, PORK
 ];

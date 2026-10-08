@@ -45,6 +45,14 @@
                background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.25); }
   #modeBadge.survival { background:rgba(120,20,20,.55); border-color:#ff8080; }
 
+  #hearts { position:fixed; bottom:84px; left:50%; transform:translateX(-50%);
+            display:flex; gap:2px; z-index:5; pointer-events:none;
+            padding:3px 7px; background:rgba(0,0,0,.4); border-radius:6px;
+            border:1px solid rgba(255,255,255,.15); }
+  #hearts.hidden { display:none; }
+  #hearts .heart { display:block;
+                   filter: drop-shadow(1px 1px 1px rgba(0,0,0,.7)); }
+
   #overlay { position:fixed; inset:0; z-index:20; cursor:pointer;
              background:radial-gradient(circle at 50% 40%, rgba(20,40,60,.82), rgba(0,0,0,.94));
              color:#fff; display:flex; flex-direction:column; align-items:center;
@@ -137,6 +145,7 @@
 <div id="hotbar"></div>
 <div id="info"></div>
 <div id="modeBadge">Игра: Творческий</div>
+<div id="hearts" class="hidden"></div>
 <div id="tooltip"></div>
 <div class="credits">VoxelCraft · three.js</div>
 

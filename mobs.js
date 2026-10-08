@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import { AIR, WATER, GRASS, SAND, WORLD_HEIGHT, SEA_LEVEL, CS } from './constants.js';
+import { AIR, WATER, GRASS, SAND, WORLD_HEIGHT, SEA_LEVEL, CS, BEEF, PORK } from './constants.js';
 import { world } from './world.js';
 import { scene } from './scene.js';
 import { player, collidesBox } from './player.js';
+import { invAdd, getMode, GameMode } from './gamemode.js';
 
-const matCache = new Map();
+/* Материал НЕ кэшируем — у каждого моба свой, чтобы можно было мерцать красным
+   независимо от остальных */
 function getMat(color) {
-  if (!matCache.has(color)) matCache.set(color, new THREE.MeshLambertMaterial({ color }));
-  return matCache.get(color);
+  return new THREE.MeshLambertMaterial({ color });
 }
 function box(w, h, d, color, x, y, z, parent) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), getMat(color));
@@ -27,8 +28,16 @@ export class Mob {
     this.yaw = Math.random() * Math.PI * 2;
     this.timer = Math.random() * 3;
     this.moving = true;
-    this.hp = type === 'zombie' ? 20 : 10;
+    this.hp = type === 'zombie' ? 10 : (type === 'cow' ? 10 : 6);
+    this.maxHp = this.hp;
     this.blocked = false;
+    this.dropItem = type === 'cow' ? BEEF : (type === 'pig' ? PORK : null);
+    this.dropCount = 1 + (Math.random() < 0.5 ? 1 : 0);
+
+    /* эффекты удара */
+    this.hurtTimer = 0;        // сколько ещё мерцать красным
+    this.knockbackTimer = 0;   // сколько ещё лететь от удара
+    this.flashOn = false;
 
     if (type === 'cow')        { this.r = 0.45; this.h = 1.7; }
     else if (type === 'pig')   { this.r = 0.40; this.h = 1.2; }
@@ -39,6 +48,12 @@ export class Mob {
     this.buildModel();
     this.group.position.copy(this.pos);
     scene.add(this.group);
+
+    /* собираем все материалы этого моба, чтобы менять свечение */
+    this.materials = [];
+    this.group.traverse(o => {
+      if (o.isMesh && o.material && o.material.emissive) this.materials.push(o.material);
+    });
   }
 
   buildModel() {
@@ -81,7 +96,18 @@ export class Mob {
 
   damage(v) {
     this.hp -= v;
-    this.group.position.y += 0.02;
+    this.hurtTimer = 0.3;
+
+    /* откидываем от игрока */
+    const dx = this.pos.x - player.pos.x;
+    const dz = this.pos.z - player.pos.z;
+    const l = Math.hypot(dx, dz) || 1;
+    this.vel.x = (dx / l) * 8;
+    this.vel.z = (dz / l) * 8;
+    this.vel.y = 4.5;
+    this.onGround = false;
+    this.knockbackTimer = 0.35;
+
     if (this.hp <= 0) this.dead = true;
   }
 
@@ -97,8 +123,11 @@ export class Mob {
       const l = Math.hypot(dxp, dzp) || 1;
       mx = dxp / l; mz = dzp / l;
       this.yaw = Math.atan2(mx, mz);
-      if (distToPlayer < 2.0) {
-        player.vel.x -= mx * 3; player.vel.z -= mz * 3;
+      if (distToPlayer < 2.0 && player.hurtCooldown <= 0 &&
+          getMode() === GameMode.SURVIVAL) {
+        player.hp = Math.max(0, player.hp - 2);
+        player.hurtCooldown = 0.8;
+        player.vel.x -= mx * 4; player.vel.z -= mz * 4;
       }
     } else {
       this.timer -= dt;
@@ -112,8 +141,18 @@ export class Mob {
       }
     }
 
-    this.vel.x = mx * speed;
-    this.vel.z = mz * speed;
+    /* --- горизонтальная скорость --- */
+    if (this.knockbackTimer > 0) {
+      this.knockbackTimer -= dt;
+      // пока летит — затухает, ИИ не управляет
+      const fr = Math.max(0, 1 - dt * 5.5);
+      this.vel.x *= fr;
+      this.vel.z *= fr;
+    } else {
+      this.vel.x = mx * speed;
+      this.vel.z = mz * speed;
+    }
+
     this.vel.y -= 26 * dt;
     if (this.vel.y < -40) this.vel.y = -40;
 
@@ -122,11 +161,11 @@ export class Mob {
 
     const nx = this.pos.x + this.vel.x * dt;
     if (!collidesBox(nx, this.pos.y, this.pos.z, r, h)) this.pos.x = nx;
-    else this.blocked = true;
+    else { this.blocked = true; this.vel.x = 0; }
 
     const nz = this.pos.z + this.vel.z * dt;
     if (!collidesBox(this.pos.x, this.pos.y, nz, r, h)) this.pos.z = nz;
-    else this.blocked = true;
+    else { this.blocked = true; this.vel.z = 0; }
 
     const ny = this.pos.y + this.vel.y * dt;
     if (!collidesBox(this.pos.x, ny, this.pos.z, r, h)) {
@@ -137,7 +176,9 @@ export class Mob {
       this.vel.y = 0;
     }
 
-    if (this.blocked && this.onGround && (this.vel.x !== 0 || this.vel.z !== 0)) {
+    /* прыжок через препятствие — только не в откидывании */
+    if (this.blocked && this.onGround && this.knockbackTimer <= 0 &&
+        (this.vel.x !== 0 || this.vel.z !== 0)) {
       this.vel.y = 7.5;
       this.onGround = false;
     }
@@ -145,10 +186,31 @@ export class Mob {
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.yaw;
 
-    const t = performance.now() * 0.006;
-    this.group.position.y = this.pos.y + Math.abs(Math.sin(t)) * 0.05;
+    /* покачивание — только стоя на земле */
+    if (this.onGround) {
+      const t = performance.now() * 0.006;
+      this.group.position.y = this.pos.y + Math.abs(Math.sin(t)) * 0.05;
+    } else {
+      this.group.position.y = this.pos.y;
+    }
+
+    /* ---- мерцание красным ---- */
+    if (this.hurtTimer > 0) {
+      this.hurtTimer -= dt;
+      if (!this.flashOn) {
+        this.flashOn = true;
+        for (const m of this.materials) m.emissive.setHex(0xff3030);
+      }
+    } else if (this.flashOn) {
+      this.flashOn = false;
+      for (const m of this.materials) m.emissive.setHex(0x000000);
+    }
   }
 }
+
+/* ---- спавн и удаление мобов ---- */
+const MAX_MOBS = 14;
+let spawnTimer = 0;
 
 export function surfaceY(wx, wz) {
   for (let y = WORLD_HEIGHT - 1; y >= 0; y--) {
@@ -158,23 +220,29 @@ export function surfaceY(wx, wz) {
   return SEA_LEVEL + 1;
 }
 
-const MAX_MOBS = 14;
-let spawnTimer = 0;
-
 export function updateMobs(dt) {
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnTimer = 1.2;
     if (mobs.length < MAX_MOBS) trySpawnMob();
   }
+  let changed = false;
   for (let i = mobs.length - 1; i >= 0; i--) {
     const m = mobs[i];
     m.update(dt);
-    if (m.dead || m.pos.distanceTo(player.pos) > 90) {
+    if (m.dead) {
+      if (m.dropItem) {
+        invAdd(m.dropItem, m.dropCount || 1);
+        changed = true;
+      }
+      scene.remove(m.group);
+      mobs.splice(i, 1);
+    } else if (m.pos.distanceTo(player.pos) > 90) {
       scene.remove(m.group);
       mobs.splice(i, 1);
     }
   }
+  return changed;
 }
 
 function trySpawnMob() {
@@ -191,8 +259,9 @@ function trySpawnMob() {
     const ground = world.getBlock(wx, sy - 1, wz);
     if (ground !== GRASS && ground !== SAND) continue;
 
+    /* зомби временно отключены */
     const r = Math.random();
-    const type = r < 0.35 ? 'zombie' : (r < 0.68 ? 'cow' : 'pig');
+    const type = r < 0.5 ? 'cow' : 'pig';
     mobs.push(new Mob(type, wx + 0.5, sy + 0.1, wz + 0.5));
     return;
   }

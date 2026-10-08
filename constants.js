@@ -15,6 +15,9 @@ export const WOODEN_PICKAXE = 30, WOODEN_AXE = 31, WOODEN_SHOVEL = 32, WOODEN_SW
       GOLD_PICKAXE = 46, GOLD_AXE = 47, GOLD_SHOVEL = 48, GOLD_SWORD = 49,
       DIAMOND_PICKAXE = 50, DIAMOND_AXE = 51, DIAMOND_SHOVEL = 52, DIAMOND_SWORD = 53;
 
+/* ---- Еда ---- */
+export const BEEF = 54, PORK = 55;
+
 /* ---- Атлас 8x8 = 64 тайла ---- */
 export const ATLAS_COLS = 8;
 export const ATLAS_ROWS = 8;

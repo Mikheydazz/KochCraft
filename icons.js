@@ -1,4 +1,4 @@
-import { ATLAS_COLS, STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT } from './constants.js';
+import { ATLAS_COLS, STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT, BEEF, PORK } from './constants.js';
 import { BLOCK_DEFS, isBlock } from './blocks.js';
 import { TOOLS, isTool } from './items.js';
 
@@ -249,6 +249,44 @@ function drawItemIcon(ctx, size, id) {
   if (id === STICK) drawStick(ctx, size);
   else if (id === IRON_INGOT || id === COPPER_INGOT || id === GOLD_INGOT)
     drawIngot(ctx, size, id);
+  else if (id === BEEF) drawMeat(ctx, size, '#8b2f2f', '#5a1a1a');
+  else if (id === PORK) drawMeat(ctx, size, '#e8a0a0', '#c07070');
+}
+
+function drawMeat(ctx, size, color, dark) {
+  const w = size * 0.62, h = size * 0.5;
+  const x = (size - w) / 2, y = (size - h) / 2;
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.15, y);
+  ctx.lineTo(x + w * 0.85, y);
+  ctx.quadraticCurveTo(x + w, y + h * 0.15, x + w * 0.95, y + h * 0.7);
+  ctx.quadraticCurveTo(x + w * 0.9, y + h, x + w * 0.5, y + h);
+  ctx.quadraticCurveTo(x + w * 0.1, y + h, x + w * 0.05, y + h * 0.7);
+  ctx.quadraticCurveTo(x, y + h * 0.15, x + w * 0.15, y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(0,0,0,.55)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // прожилки
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(x + w * (0.22 + i * 0.18), y + h * 0.18);
+    ctx.lineTo(x + w * (0.28 + i * 0.18), y + h * 0.82);
+    ctx.stroke();
+  }
+
+  // блик
+  ctx.fillStyle = 'rgba(255,255,255,.28)';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.35, y + h * 0.35, w * 0.13, h * 0.13, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawStick(ctx, size) {

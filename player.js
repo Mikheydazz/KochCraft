@@ -16,7 +16,13 @@ export const player = {
   yaw: 0,
   pitch: 0,
   height: 1.8,
-  radius: 0.3
+  radius: 0.3,
+
+  /* здоровье */
+  hp: 20,
+  maxHp: 20,
+  hurtCooldown: 0,
+  inAirMaxY: null
 };
 
 export function collidesBox(x, y, z, r, h) {
@@ -36,6 +42,34 @@ export function updatePlayer(dt) {
 
   p.inWater = world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.6), Math.floor(p.pos.z)) === WATER
            || world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 1.4), Math.floor(p.pos.z)) === WATER;
+
+ if (p.hurtCooldown > 0) p.hurtCooldown -= dt;
+
+  // ----- урон от падения -----
+  if (p.onGround || p.flying || p.inWater) {
+    if (p.inAirMaxY !== null) {
+      if (p.onGround && !p.flying && !p.inWater) {
+        const drop = p.inAirMaxY - p.pos.y;
+        if (drop >= 5) {
+          const dmg = Math.floor(drop) - 4;
+          if (dmg > 0) p.hp = Math.max(0, p.hp - dmg);
+        }
+      }
+      p.inAirMaxY = null;
+    }
+  } else {
+    if (p.inAirMaxY === null) p.inAirMaxY = p.pos.y;
+    else if (p.pos.y > p.inAirMaxY) p.inAirMaxY = p.pos.y;
+  }
+
+  // ----- смерть/респавн -----
+  if (p.hp <= 0) {
+    p.hp = p.maxHp;
+    p.pos.y = 60;
+    p.vel.set(0, 0, 0);
+    p.inAirMaxY = null;
+    p.hurtCooldown = 1;
+  }
 
   // Присед и спринт
   p.crouching = !p.flying && (keys['ShiftLeft'] || keys['ShiftRight']) && !p.inWater;
