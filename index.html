@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>VoxelCraft — 3D песочница</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#9ad0f0;
+              font-family:"Segoe UI", monospace; user-select:none; }
+  canvas { display:block; }
+
+  #crosshair { position:fixed; left:50%; top:50%; width:22px; height:22px;
+               margin:-11px 0 0 -11px; pointer-events:none; z-index:5; }
+  #crosshair::before, #crosshair::after { content:''; position:absolute;
+               background:rgba(255,255,255,.85); box-shadow:0 0 2px #000; }
+  #crosshair::before { left:10px; top:0; width:2px; height:22px; }
+  #crosshair::after  { top:10px; left:0; height:2px; width:22px; }
+
+  #breakbar { position:fixed; left:50%; top:calc(50% + 22px);
+              width:80px; height:6px; margin-left:-40px;
+              background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.35);
+              border-radius:3px; display:none; z-index:6; overflow:hidden; }
+  #breakbar.active { display:block; }
+  #breakfill { height:100%; width:0%; background:linear-gradient(90deg,#ffd54a,#ff9a3c); }
+
+  #hotbar { position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+            display:flex; gap:5px; z-index:5; }
+  .slot { width:54px; height:58px; border-radius:6px; display:flex; flex-direction:column;
+          align-items:center; justify-content:center; gap:2px;
+          background:rgba(0,0,0,.42); border:2px solid rgba(255,255,255,.28);
+          color:#fff; font-size:9px; text-align:center; transition:.12s; position:relative; }
+  .slot .num { font-size:10px; opacity:.6; position:absolute; top:2px; left:5px; }
+  .slot .sw { width:26px; height:26px; border-radius:4px;
+              border:1px solid rgba(0,0,0,.4); display:none; }
+  .slot .count { position:absolute; right:4px; bottom:2px; font-size:12px;
+                 font-weight:bold; color:#fff; text-shadow:1px 1px 2px #000; }
+  .slot.active { border-color:#fff; background:rgba(255,255,255,.22); transform:translateY(-4px); }
+
+  #info { position:fixed; top:10px; left:12px; color:#fff; font-size:12px;
+          line-height:1.6; text-shadow:1px 1px 2px #000; pointer-events:none; z-index:5; }
+  #info b { color:#ffe27a; }
+
+  #modeBadge { position:fixed; top:10px; right:12px; color:#fff; font-size:12px;
+               padding:5px 12px; border-radius:6px; z-index:5; pointer-events:none;
+               background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.25); }
+  #modeBadge.survival { background:rgba(120,20,20,.55); border-color:#ff8080; }
+
+  #overlay { position:fixed; inset:0; z-index:20; cursor:pointer;
+             background:radial-gradient(circle at 50% 40%, rgba(20,40,60,.82), rgba(0,0,0,.94));
+             color:#fff; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; gap:14px; text-align:center; padding:20px; }
+  #overlay h1 { font-size:38px; letter-spacing:3px; text-shadow:0 0 18px #4fd; }
+  #overlay p { font-size:14px; opacity:.85; line-height:1.7; max-width:700px; }
+  #overlay .key { display:inline-block; padding:1px 7px; border:1px solid #888;
+                  border-radius:4px; margin:0 2px; background:rgba(255,255,255,.1); }
+
+  #modeBtn { padding:10px 26px; font-size:15px; letter-spacing:1px;
+             border:2px solid #4fd; border-radius:8px; cursor:pointer;
+             background:rgba(20,80,110,.6); color:#fff; transition:.15s;
+             font-family:inherit; }
+  #modeBtn:hover { background:rgba(40,140,180,.75); }
+  #modeBtn.survival { border-color:#ff8080; background:rgba(120,20,20,.6); }
+  #modeBtn.survival:hover { background:rgba(170,40,40,.75); }
+
+    #tooltip { position:fixed; z-index:100; display:none;
+             background:rgba(15,15,20,.94); color:#fff;
+             padding:5px 10px; border-radius:4px; font-size:12px;
+             border:1px solid rgba(255,255,255,.2);
+             pointer-events:none; white-space:nowrap;
+             text-shadow:1px 1px 2px #000; }
+
+  .slot .sw, .invSlot .sw, #heldItem .sw {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: rgba(0,0,0,.12);
+  }
+  .credits { position:fixed; bottom:10px; right:14px; color:#fff; opacity:.45;
+             font-size:11px; z-index:5; pointer-events:none; }
+
+  /* --------- ИНВЕНТАРЬ --------- */
+  #invOverlay { position:fixed; inset:0; z-index:30; display:none;
+                align-items:center; justify-content:center;
+                background:rgba(0,0,0,.55); cursor:default; }
+  #invPanel { background:#c6c6c6; border:4px solid #565656;
+              border-radius:8px; padding:16px 16px 14px;
+              box-shadow:0 12px 50px rgba(0,0,0,.65);
+              max-height:96vh; overflow:auto; position:relative; }
+  #invTitle { color:#2b2b2b; font-size:14px; font-weight:bold;
+              margin-bottom:10px; text-shadow:none; }
+  #invTop { margin-bottom:12px; }
+
+  .craftWrap { display:flex; align-items:center; gap:14px; padding:4px 0; }
+  .craftGrid { display:grid; gap:4px; }
+  .craftGrid.size2 { grid-template-columns:repeat(2, 52px); }
+  .craftGrid.size3 { grid-template-columns:repeat(3, 52px); }
+  .craftArrow { font-size:24px; color:#4b4b4b; }
+  .craftOut { display:flex; align-items:center; justify-content:center; }
+
+  .furnaceWrap { display:flex; align-items:center; gap:10px; padding:4px 0; flex-wrap:wrap; }
+  .furnaceBar { width:80px; height:14px; background:#6b6b6b; border:2px solid #373737;
+                border-radius:4px; overflow:hidden; position:relative; }
+  .furnaceFill { height:100%; width:0%; background:linear-gradient(90deg,#ff9a3c,#ffd54a); }
+
+  .invGrid { display:grid; grid-template-columns:repeat(9, 52px);
+             gap:4px; margin-bottom:8px; }
+  .invGrid.bottom { margin-bottom:0; padding-top:8px; border-top:2px solid #8a8a8a; }
+  .invSlot { width:52px; height:52px; background:#8b8b8b;
+             border:2px solid #373737; border-radius:4px;
+             position:relative; display:flex; align-items:center;
+             justify-content:center; cursor:pointer; }
+  .invSlot:hover { background:#a0a0a0; }
+  .invSlot .sw { width:32px; height:32px; border-radius:4px;
+                 border:1px solid rgba(0,0,0,.4); display:none; }
+  .invSlot .count { position:absolute; right:3px; bottom:0px;
+                    color:#fff; font-weight:bold; font-size:13px;
+                    text-shadow:1px 1px 2px #000; pointer-events:none; }
+
+  #heldItem { position:fixed; width:32px; height:32px;
+              pointer-events:none; z-index:40; display:none;
+              transform:translate(-50%, -50%); }
+  #heldItem .sw { width:100%; height:100%; border-radius:4px;
+                  border:1px solid rgba(0,0,0,.4);
+                  filter:drop-shadow(0 0 6px rgba(0,0,0,.6)); }
+  #heldItem .count { position:absolute; right:0; bottom:0;
+                     color:#fff; font-weight:bold; font-size:14px;
+                     text-shadow:1px 1px 2px #000; }
+
+  #invHint { position:absolute; left:50%; bottom:-26px; transform:translateX(-50%);
+             color:#ddd; font-size:11px; opacity:.7; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+<div id="breakbar"><div id="breakfill"></div></div>
+<div id="hotbar"></div>
+<div id="info"></div>
+<div id="modeBadge">Игра: Творческий</div>
+<div id="tooltip"></div>
+<div class="credits">VoxelCraft · three.js</div>
+
+<div id="invOverlay">
+  <div id="invPanel">
+    <div id="invTitle">Инвентарь</div>
+    <div id="invTop"></div>
+    <div id="invMain" class="invGrid"></div>
+    <div id="invHotbar" class="invGrid bottom"></div>
+<div id="invHint">ЛКМ — взять/положить · ПКМ — половина/один · E — закрыть</div>
+  </div>
+  <div id="heldItem"><div class="sw"></div><div class="count"></div></div>
+</div>
+
+<div id="overlay">
+  <h1>VOXELCRAFT</h1>
+  <button id="modeBtn">Режим: Творческий</button>
+  <p>
+    <span class="key">W A S D</span> — движение &nbsp;·&nbsp; <span class="key">CTRL</span> — спринт &nbsp;·&nbsp;
+    <span class="key">SHIFT</span> — присед &nbsp;·&nbsp; <span class="key">Space</span> — прыжок<br>
+    <span class="key">ЛКМ</span> — сломать / ударить &nbsp;·&nbsp; <span class="key">ПКМ</span> — поставить / открыть верстак и печь<br>
+    <span class="key">E</span> — инвентарь (2×2 крафт) &nbsp;·&nbsp; <span class="key">1..9</span> / <span class="key">Колесо</span> — слоты<br>
+    <span class="key">F</span> — полёт
+  </p>
+  <p style="opacity:.6">Для каменных, железных, медных, золотых и алмазных руд нужна кирка. Плавь руды в печи.</p>
+  <p style="opacity:.6">Кликните, чтобы играть</p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
