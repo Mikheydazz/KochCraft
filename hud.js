@@ -14,6 +14,7 @@ import { mobs } from './mobs.js';
 import { BIOME_OCEAN, BIOME_FOREST } from './constants.js';
 import { findRecipe, SMELTING, FUEL_VALUE } from './recipes.js';
 import { spawnDrop } from './drops.js';
+import { getChestSlots } from './chests.js';
 
 export let activeSlot = 0;
 export const getActiveSlot = () => activeSlot;
@@ -27,6 +28,7 @@ const craftGrid = new Array(9).fill(null);
 let craftResult = null;
 
 const furnace = { input: null, fuel: null, output: null, progress: 0, burnLeft: 0 };
+let currentChest = null;   // { x, y, z, slots }
 
 /* ============================================================
    ТУЛТИП
@@ -117,6 +119,7 @@ function makeSlotEl(parent, kind, index) {
     if (kind === 'furnaceIn')   return furnace.input;
     if (kind === 'furnaceFuel') return furnace.fuel;
     if (kind === 'furnaceOut')  return furnace.output;
+    if (kind === 'chest')       return currentChest ? currentChest.slots[index] : null;
     return slots[index];
   };
   d.addEventListener('mousedown', (e) => {
@@ -173,6 +176,15 @@ function buildTop(context) {
     const fuelEl = makeSlotEl(wrap, 'furnaceFuel', 0);
     topSlotEls.push(fuelEl); topKinds.push('furnaceFuel');
     invTop.appendChild(wrap);
+  } else if (context === 'chest') {
+    invTitle.textContent = 'Сундук';
+    const grid = document.createElement('div');
+    grid.className = 'chestGrid';
+    for (let i = 0; i < 27; i++) {
+      const el = makeSlotEl(grid, 'chest', i);
+      topSlotEls.push(el); topKinds.push('chest');
+    }
+    invTop.appendChild(grid);
   }
 }
 
@@ -207,6 +219,7 @@ function paintTop() {
     else if (kind === 'furnaceIn')   s = furnace.input;
     else if (kind === 'furnaceFuel') s = furnace.fuel;
     else if (kind === 'furnaceOut')  s = furnace.output;
+    else if (kind === 'chest')       s = currentChest ? currentChest.slots[i] : null;
     paintInvSlot(el, s, true);
   }
 }
@@ -257,6 +270,10 @@ function onSlotClick(kind, index, button) {
   else if (kind === 'furnaceIn')    ref = { obj: furnace, key: 'input' };
   else if (kind === 'furnaceFuel')  ref = { obj: furnace, key: 'fuel' };
   else if (kind === 'furnaceOut')   ref = { obj: furnace, key: 'output' };
+  else if (kind === 'chest') {
+    if (!currentChest) return;
+    ref = { arr: currentChest.slots, i: index };
+  }
   else                              ref = { arr: slots, i: index };
 
   const get = () => ref.arr ? ref.arr[ref.i] : ref.obj[ref.key];
@@ -340,8 +357,19 @@ export function dropInFront(id, count, durability) {
 /* ============================================================
    ОТКРЫТИЕ / ЗАКРЫТИЕ
    ============================================================ */
-export function openUI(context) {
+export function openUI(context, opts = {}) {
   if (uiContext || player.dead) return;
+
+  if (context === 'chest') {
+    if (opts.x === undefined) return;
+    currentChest = {
+      x: opts.x, y: opts.y, z: opts.z,
+      slots: getChestSlots(opts.x, opts.y, opts.z)
+    };
+  } else {
+    currentChest = null;
+  }
+
   uiContext = context;
   document.exitPointerLock();
   invOverlay.style.display = 'flex';
@@ -368,6 +396,7 @@ export function closeUI(opts = {}) {
 
   hideTooltip();
   uiContext = null;
+  currentChest = null;
   invOverlay.style.display = 'none';
   refreshHotbar();
 

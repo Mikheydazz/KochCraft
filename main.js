@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {
   AIR, WATER, BEDROCK, CS, SEA_LEVEL, BLOCK_HARDNESS, BLOCK_TOOL_REQ,
   CRAFTING_TABLE, FURNACE, BEEF, PORK, COAL, COAL_ITEM,
-  GRASS, DIRT, CLAY
+  GRASS, DIRT, CLAY, CHEST
 } from './constants.js';
 import { input } from './input.js';
 import { scene, camera, renderer, highlight } from './scene.js';
@@ -34,6 +34,9 @@ import {
 } from './gamemode.js';
 import { initIcons } from './icons.js';
 import { atlasCanvas } from './scene.js';
+import {
+  getChestSlots, deleteChest, getAllChests, loadChests
+} from './chests.js';
 import {
   setWaterWorld, enqueueAround, tickWater, clearWaterQueue
 } from './water.js';
@@ -209,6 +212,16 @@ document.getElementById('btnCreateOk').addEventListener('click', () => {
   startWorld(meta);
 });
 document.getElementById('btnContinue').addEventListener('click', () => tryAcquirePointer());
+document.getElementById('btnFullscreen').addEventListener('click', () => {
+  const el = document.documentElement;
+  if (!document.fullscreenElement) {
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
+});
 document.getElementById('btnPauseMode').addEventListener('click', () => { toggleMode(); });
 document.getElementById('btnSaveQuit').addEventListener('click', () => {
   saveCurrentWorld();
@@ -255,6 +268,7 @@ function startWorld(meta) {
     if (state.inventory) loadInventory(state.inventory);
     else resetInventoryForMode();
     loadFurnaceSnapshot(state.furnace || null);
+    loadChests(state.chests || []);
   } else {
     clearAllChanges();
     clearDrops();
@@ -274,7 +288,8 @@ function startWorld(meta) {
     player.dead = false;
     player.spawnPos.copy(player.pos);
     resetInventoryForMode();
-    loadFurnaceSnapshot(null);   // печь пустая
+    loadFurnaceSnapshot(null);
+    loadChests([]);
   }
 
   const scx = Math.floor(player.pos.x / CS), scz = Math.floor(player.pos.z / CS);
@@ -312,7 +327,8 @@ function saveCurrentWorld() {
     },
     inventory: getInventorySnapshot(),
     blockChanges: getAllChanges(),
-    furnace: getFurnaceSnapshot()
+    furnace: getFurnaceSnapshot(),
+    chests: getAllChests()
   };
   saveWorld(currentWorldId, state);
 }
@@ -449,9 +465,19 @@ function updateBreaking(dt, hit) {
 
   if (breaking.progress >= 1) {
     const blockId = hit.block;
+
+    // если ломаем сундук — выкидываем его содержимое
+    if (blockId === CHEST) {
+      const arr = getChestSlots(hit.x, hit.y, hit.z);
+      for (const s of arr) {
+        if (s) spawnDrop(s.id, s.count,
+          hit.x + 0.5, hit.y + 0.6, hit.z + 0.5, s.durability);
+      }
+      deleteChest(hit.x, hit.y, hit.z);
+    }
+
     world.setBlock(hit.x, hit.y, hit.z, AIR);
 
-    // дроп только если правильный инструмент
     if (canHarvest(blockId, tool)) {
       invAdd(blockDrop(blockId), 1);
       // 20% шанс получить глину с земли и травы
@@ -494,6 +520,7 @@ function eatFood(id) {
 function tryPlaceOrUse(hit) {
   if (hit.block === CRAFTING_TABLE) { openUI('crafting'); return; }
   if (hit.block === FURNACE)        { openUI('furnace');  return; }
+  if (hit.block === CHEST)          { openUI('chest', { x: hit.x, y: hit.y, z: hit.z }); return; }
 
   const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
   const cur = world.getBlock(px, py, pz);
@@ -520,6 +547,25 @@ function tryPlaceOrUse(hit) {
    ============================================================ */
 addEventListener('keydown', (e) => {
   input.keys[e.code] = true;
+
+    // Пытаемся перехватить опасные браузерные шорткаты,
+  // чтобы игрок случайно не закрыл вкладку/не перезагрузил страницу.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    if (e.code === 'KeyW' || e.code === 'KeyT' || e.code === 'KeyN' ||
+        e.code === 'KeyR' || e.code === 'KeyQ') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
+  // Ctrl+Shift+W/N/T тоже не пропускаем
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+    if (e.code === 'KeyW' || e.code === 'KeyN' || e.code === 'KeyT') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
 
   if (e.code === 'KeyE') {
     e.preventDefault();

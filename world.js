@@ -7,6 +7,7 @@ import {
 } from './constants.js';
 import { perlin, fbm2, hash2 } from './noise.js';
 import { BLOCK_DEFS, isWaterBlock } from './blocks.js';
+import { tryPlaceStructures } from './structures.js';
 import { scene, blockMaterial, waterMaterial, glassMaterial } from './scene.js';
 
 export function terrainHeight(wx, wz) {
@@ -190,6 +191,9 @@ export function generateChunk(chunk) {
           }
     }
   }
+
+    // ---- Структуры (домики) ----
+  tryPlaceStructures(chunk, terrainHeight, biomeAt);
   // накладываем сохранённые изменения поверх процедурной генерации
   const ck = cx + ',' + cz;
   const chMap = changesByChunk.get(ck);

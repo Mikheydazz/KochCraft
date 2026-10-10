@@ -16,6 +16,113 @@ function box(w, h, d, color, x, y, z, parent) {
   parent.add(m);
   return m;
 }
+function sphere(r, color, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), getMat(color));
+  m.position.set(x, y, z);
+  parent.add(m);
+  return m;
+}
+function capsule(r, len, color, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 10), getMat(color));
+  m.position.set(x, y, z);
+  parent.add(m);
+  return m;
+}
+function cone(r, h, seg, color, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), getMat(color));
+  m.position.set(x, y, z);
+  parent.add(m);
+  return m;
+}
+
+/* ============================================================
+   ШКОЛЬНИК (стандартный скин)
+   ============================================================ */
+function buildSchoolboyModel(parent) {
+  const skin = 0xf5d6a8;
+  const shirt = 0x4a6ea8;
+  const pants = 0x3a3a5a;
+  const shoe = 0x2a2a1a;
+  const hair = 0x3a2a1a;
+  const backpack = 0xb57c4a;
+  const tie = 0xa02020;
+
+  // Торс
+  const torso = sphere(1.1, shirt, 0, 1.5, 0, parent);
+  torso.scale.set(1.1, 1.15, 0.85);
+
+  // Живот
+  const belly = sphere(0.85, shirt, 0, 1.05, 0.35, parent);
+  belly.scale.set(1.0, 0.9, 0.9);
+
+  // Галстук (короткий)
+  const tieMesh = cone(0.12, 0.7, 4, tie, 0, 1.55, 0.95, parent);
+  tieMesh.rotation.x = Math.PI;
+
+  // Голова
+  sphere(0.62, skin, 0, 2.85, 0, parent);
+
+  // Щёки
+  sphere(0.22, skin, -0.35, 2.75, 0.5, parent);
+  sphere(0.22, skin,  0.35, 2.75, 0.5, parent);
+
+  // Глаза (MeshBasicMaterial — не мигает красным)
+  const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const blackMat = new THREE.MeshBasicMaterial({ color: 0x1a0a0a });
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), whiteMat);
+  eyeL.position.set(-0.2, 2.95, 0.52); parent.add(eyeL);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.2; parent.add(eyeR);
+  const pupL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), blackMat);
+  pupL.position.set(-0.2, 2.95, 0.62); parent.add(pupL);
+  const pupR = pupL.clone(); pupR.position.x = 0.2; parent.add(pupR);
+
+  // Рот
+  const mouth = new THREE.Mesh(
+    new THREE.TorusGeometry(0.12, 0.035, 6, 12, Math.PI), blackMat
+  );
+  mouth.position.set(0, 2.65, 0.55);
+  mouth.rotation.z = Math.PI;
+  parent.add(mouth);
+
+  // Волосы (полусфера)
+  const hairMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.64, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    getMat(hair)
+  );
+  hairMesh.position.y = 2.9;
+  parent.add(hairMesh);
+
+  // Рюкзак
+  box(0.9, 1.2, 0.5, backpack, 0, 1.6, -1.05, parent);
+  box(0.7, 0.25, 0.35, backpack, 0, 2.15, -1.0, parent);
+
+  // Руки
+  function makeArm(side) {
+    const arm = new THREE.Group();
+    const upper = capsule(0.22, 0.7, shirt, 0, -0.35, 0, arm);
+    sphere(0.24, skin, 0, -0.9, 0, arm);
+    arm.position.set(side * 1.15, 2.0, 0);
+    arm.rotation.z = side * 0.15;
+    parent.add(arm);
+    return arm;
+  }
+  const armL = makeArm(-1);
+  const armR = makeArm(1);
+
+  // Ноги
+  function makeLeg(side) {
+    const leg = new THREE.Group();
+    capsule(0.28, 0.6, pants, 0, -0.4, 0, leg);
+    box(0.45, 0.25, 0.65, shoe, 0, -0.85, 0.12, leg);
+    leg.position.set(side * 0.42, 0.85, 0);
+    parent.add(leg);
+    return leg;
+  }
+  const legL = makeLeg(-1);
+  const legR = makeLeg(1);
+
+  return { armL, armR, legL, legR };
+}
 
 export const mobs = [];
 
@@ -28,7 +135,7 @@ export class Mob {
     this.yaw = Math.random() * Math.PI * 2;
     this.timer = Math.random() * 3;
     this.moving = true;
-    this.hp = type === 'zombie' ? 10 : (type === 'cow' ? 10 : 6);
+    this.hp = (type === 'pig') ? 6 : 10;
     this.maxHp = this.hp;
     this.blocked = false;
     this.dropItem = type === 'cow' ? BEEF : (type === 'pig' ? PORK : null);
@@ -39,9 +146,10 @@ export class Mob {
     this.knockbackTimer = 0;   // сколько ещё лететь от удара
     this.flashOn = false;
 
-    if (type === 'cow')        { this.r = 0.45; this.h = 1.7; }
-    else if (type === 'pig')   { this.r = 0.40; this.h = 1.2; }
-    else                       { this.r = 0.32; this.h = 1.95; }
+    if (type === 'cow')             { this.r = 0.45; this.h = 1.7; }
+    else if (type === 'pig')        { this.r = 0.40; this.h = 1.2; }
+    else if (type === 'schoolboy')  { this.r = 0.35; this.h = 1.9; }
+    else                            { this.r = 0.32; this.h = 1.95; }
 
     this.group = new THREE.Group();
     this.group.userData.mob = this;
@@ -58,7 +166,13 @@ export class Mob {
 
   buildModel() {
     const g = this.group;
-    if (this.type === 'cow') {
+    if (this.type === 'schoolboy') {
+      // модель в три раза выше стандартной — уменьшаем до роста зомби
+      const inner = new THREE.Group();
+      inner.scale.set(0.55, 0.55, 0.55);
+      g.add(inner);
+      this.model = buildSchoolboyModel(inner);
+    } else if (this.type === 'cow') {
       const brown = 0x4a3520, white = 0xe6e2d6, dark = 0x2b1d10;
       box(0.9, 0.78, 1.4, brown, 0, 1.05, 0, g);
       box(0.5, 0.35, 0.3, white, 0, 1.05, 0.6, g);
@@ -194,6 +308,18 @@ export class Mob {
       this.group.position.y = this.pos.y;
     }
 
+    /* анимация ходьбы школьника */
+    if (this.type === 'schoolboy' && this.model) {
+      const moving = Math.abs(this.vel.x) + Math.abs(this.vel.z) > 0.3;
+      const phase = performance.now() * 0.008;
+      const target = moving ? 1 : 0;
+      const swing = Math.sin(phase) * 0.4 * target;
+      this.model.legL.rotation.x = swing;
+      this.model.legR.rotation.x = -swing;
+      this.model.armL.rotation.x = -swing * 0.7;
+      this.model.armR.rotation.x = swing * 0.7;
+    }
+
     /* ---- мерцание красным ---- */
     if (this.hurtTimer > 0) {
       this.hurtTimer -= dt;
@@ -259,9 +385,9 @@ function trySpawnMob() {
     const ground = world.getBlock(wx, sy - 1, wz);
     if (ground !== GRASS && ground !== SAND) continue;
 
-    /* зомби временно отключены */
+    // зомби временно отключены
     const r = Math.random();
-    const type = r < 0.5 ? 'cow' : 'pig';
+    const type = r < 0.4 ? 'cow' : (r < 0.7 ? 'pig' : 'schoolboy');
     mobs.push(new Mob(type, wx + 0.5, sy + 0.1, wz + 0.5));
     return;
   }
