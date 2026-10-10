@@ -8,7 +8,8 @@ import {
   IRON_PICKAXE, IRON_AXE, IRON_SHOVEL, IRON_SWORD,
   GOLD_PICKAXE, GOLD_AXE, GOLD_SHOVEL, GOLD_SWORD,
   DIAMOND_PICKAXE, DIAMOND_AXE, DIAMOND_SHOVEL, DIAMOND_SWORD,
-  BEEF, PORK,
+  BEEF, PORK, COAL_ITEM, GLASS,
+  CLAY, BRICK, BRICK_BLOCK,
   WATER
 } from './constants.js';
 
@@ -21,7 +22,12 @@ export const ITEM_COLORS = {
   [CRAFTING_TABLE]: '#a67848', [FURNACE]: '#6b6b6f',
   [STICK]: '#8a5a2a', [IRON_INGOT]: '#d8d8d8',
   [COPPER_INGOT]: '#c87533', [GOLD_INGOT]: '#ffd700',
-  [BEEF]: '#8b2f2f', [PORK]: '#e8a0a0'
+  [BEEF]: '#8b2f2f', [PORK]: '#e8a0a0',
+  [COAL_ITEM]: '#1c1c20',
+  [GLASS]: '#bfe3ff',
+  [CLAY]: '#b8a89a',
+  [BRICK]: '#a8503a',
+  [BRICK_BLOCK]: '#a8503a'
 };
 
 const MAT_COLOR = {
@@ -71,7 +77,12 @@ export function itemName(id) {
     [BEDROCK]: 'Бедрок', [PLANKS]: 'Доски', [CRAFTING_TABLE]: 'Верстак',
     [FURNACE]: 'Печь', [STICK]: 'Палка', [IRON_INGOT]: 'Железный слиток',
     [COPPER_INGOT]: 'Медный слиток', [GOLD_INGOT]: 'Золотой слиток',
-    [BEEF]: 'Говядина', [PORK]: 'Свинина'
+    [BEEF]: 'Говядина', [PORK]: 'Свинина',
+    [COAL_ITEM]: 'Уголь',
+    [GLASS]: 'Стекло',
+    [CLAY]: 'Глина',
+    [BRICK]: 'Кирпич',
+    [BRICK_BLOCK]: 'Кирпичный блок'
   };
   if (names[id]) return names[id];
   const t = TOOLS[id];
@@ -87,9 +98,10 @@ export function itemName(id) {
 /* Список всего, что показываем в творческом режиме */
 export const CREATIVE_ITEMS = [
   GRASS, DIRT, STONE, SAND, LOG, LEAVES, PLANKS,
-  CRAFTING_TABLE, FURNACE,
+  CRAFTING_TABLE, FURNACE, GLASS, BRICK_BLOCK,
   COAL, IRON, COPPER, GOLD, DIAMOND,
   STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT,
+  CLAY, BRICK,
   WOODEN_PICKAXE, STONE_PICKAXE, COPPER_PICKAXE, IRON_PICKAXE,
   GOLD_PICKAXE, DIAMOND_PICKAXE,
   WOODEN_AXE, STONE_AXE, COPPER_AXE, IRON_AXE, GOLD_AXE, DIAMOND_AXE,
@@ -97,5 +109,5 @@ export const CREATIVE_ITEMS = [
   GOLD_SHOVEL, DIAMOND_SHOVEL,
   WOODEN_SWORD, STONE_SWORD, COPPER_SWORD, IRON_SWORD,
   GOLD_SWORD, DIAMOND_SWORD,
-  BEEF, PORK
+  BEEF, PORK, COAL_ITEM
 ];

@@ -18,6 +18,24 @@ export const WOODEN_PICKAXE = 30, WOODEN_AXE = 31, WOODEN_SHOVEL = 32, WOODEN_SW
 /* ---- Еда ---- */
 export const BEEF = 54, PORK = 55;
 
+/* ---- Прочее ---- */
+export const COAL_ITEM = 56;
+
+/* ---- Блоки, добавленные позже ---- */
+export const GLASS = 57;
+
+/* ---- Текущая вода (уровни 1..5) ---- */
+export const FLOWING_WATER_1 = 58;
+export const FLOWING_WATER_2 = 59;
+export const FLOWING_WATER_3 = 60;
+export const FLOWING_WATER_4 = 61;
+export const FLOWING_WATER_5 = 62;
+
+/* ---- Глина / кирпичи ---- */
+export const CLAY = 63;
+export const BRICK = 64;
+export const BRICK_BLOCK = 65;
+
 /* ---- Атлас 8x8 = 64 тайла ---- */
 export const ATLAS_COLS = 8;
 export const ATLAS_ROWS = 8;
@@ -28,7 +46,8 @@ export const T = {
   LEAVES: 8, COAL: 9, IRON: 10, COPPER: 11,
   GOLD: 12, DIAMOND: 13, BEDROCK: 14, PLANKS: 15,
   CRAFTING_TOP: 16, CRAFTING_SIDE: 17,
-  FURNACE_FRONT: 18, FURNACE_SIDE: 19, FURNACE_TOP: 20
+  FURNACE_FRONT: 18, FURNACE_SIDE: 19, FURNACE_TOP: 20,
+  GLASS: 21, BRICK: 22
 };
 
 export const CS = 16;
@@ -52,7 +71,8 @@ export const BLOCK_HARDNESS = {
   [GRASS]: 0.7, [DIRT]: 0.7, [STONE]: 1.6, [SAND]: 0.6, [LOG]: 1.3,
   [LEAVES]: 0.25, [COAL]: 1.9, [IRON]: 2.3, [COPPER]: 2.1,
   [GOLD]: 2.6, [DIAMOND]: 3.2, [BEDROCK]: Infinity, [PLANKS]: 1.1,
-  [CRAFTING_TABLE]: 1.2, [FURNACE]: 2.0
+  [CRAFTING_TABLE]: 1.2, [FURNACE]: 2.0,
+  [BRICK_BLOCK]: 2.0
 };
 
 /* Требуемый инструмент: { tool, tier } или null */

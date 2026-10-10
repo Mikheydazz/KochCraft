@@ -4,6 +4,7 @@ import { BLOCK_DEFS, isBlock } from './blocks.js';
 import { blockMaterial } from './scene.js';
 import { input } from './input.js';
 import { player } from './player.js';
+import { getIconCanvas } from './icons.js';
 
 export const viewScene = new THREE.Scene();
 export const viewCamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.01, 10);
@@ -28,6 +29,7 @@ const blockHolder = new THREE.Group();
 blockHolder.position.set(0, 0.04, -0.28);
 handGroup.add(blockHolder);
 
+/* ---- 3D-куб для блоков ---- */
 function makeBlockMesh(blockId) {
   const def = BLOCK_DEFS[blockId];
   if (!def) return null;
@@ -61,18 +63,58 @@ function makeBlockMesh(blockId) {
   return new THREE.Mesh(geo, blockMaterial);
 }
 
-let currentHandBlock = null;
-export function updateHandItem(blockId) {
-  if (currentHandBlock) {
-    blockHolder.remove(currentHandBlock);
-    currentHandBlock.geometry.dispose();
-    currentHandBlock = null;
+/* ---- плоский спрайт для предметов ---- */
+function makeItemMesh(id) {
+  const cv = getIconCanvas(id);
+  if (!cv) return null;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    alphaTest: 0.05,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+let currentHandMesh = null;
+
+export function updateHandItem(id) {
+  if (currentHandMesh) {
+    blockHolder.remove(currentHandMesh);
+    if (currentHandMesh.geometry) currentHandMesh.geometry.dispose();
+    const mat = currentHandMesh.material;
+    if (mat) {
+      if (mat.map) mat.map.dispose();
+      mat.dispose();
+    }
+    currentHandMesh = null;
   }
-  if (!blockId || blockId === AIR || !isBlock(blockId)) return;
-  currentHandBlock = makeBlockMesh(blockId);
-  if (currentHandBlock) {
-    currentHandBlock.scale.set(0.32, 0.32, 0.32);
-    blockHolder.add(currentHandBlock);
+  if (!id || id === AIR) return;
+
+  if (isBlock(id)) {
+    currentHandMesh = makeBlockMesh(id);
+    if (currentHandMesh) {
+      currentHandMesh.scale.set(0.32, 0.32, 0.32);
+      blockHolder.add(currentHandMesh);
+    }
+  } else {
+    currentHandMesh = makeItemMesh(id);
+    if (currentHandMesh) {
+      currentHandMesh.scale.set(0.62, 0.62, 0.62);
+      // компенсируем наклон руки и разворачиваем спрайт лицом к камере
+      currentHandMesh.rotation.set(
+        -handGroup.rotation.x - 0.15,
+        Math.PI - handGroup.rotation.y,
+        -handGroup.rotation.z + 0.35
+      );
+      blockHolder.add(currentHandMesh);
+    }
   }
 }
 

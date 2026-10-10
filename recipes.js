@@ -1,7 +1,8 @@
 import {
-  LOG, PLANKS, STICK, CRAFTING_TABLE, FURNACE, COAL,
+  LOG, PLANKS, STICK, CRAFTING_TABLE, FURNACE, COAL_ITEM,
   IRON, COPPER, GOLD, IRON_INGOT, COPPER_INGOT, GOLD_INGOT,
-  STONE, DIAMOND,
+  STONE, DIAMOND, SAND, GLASS,
+  CLAY, BRICK, BRICK_BLOCK,
   WOODEN_PICKAXE, WOODEN_AXE, WOODEN_SHOVEL, WOODEN_SWORD,
   STONE_PICKAXE, STONE_AXE, STONE_SHOVEL, STONE_SWORD,
   COPPER_PICKAXE, COPPER_AXE, COPPER_SHOVEL, COPPER_SWORD,
@@ -14,8 +15,25 @@ import {
    { size: 2|3, pattern: [[...]], output: { id, count } }
    null = пустая ячейка */
 
+function trimPattern(p) {
+  let minX = p[0].length, minY = p.length, maxX = -1, maxY = -1;
+  for (let y = 0; y < p.length; y++)
+    for (let x = 0; x < p[y].length; x++) {
+      if (p[y][x]) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  if (maxX < 0) return [[]];
+  const out = [];
+  for (let y = minY; y <= maxY; y++) out.push(p[y].slice(minX, maxX + 1));
+  return out;
+}
+
 function shaped(size, pattern, out, count = 1) {
-  return { size, pattern, output: { id: out, count } };
+  return { size, pattern: trimPattern(pattern), output: { id: out, count } };
 }
 
 const TOOL_MATS = [
@@ -43,7 +61,13 @@ export const RECIPES = [
     [STONE, STONE, STONE],
     [STONE, null,  STONE],
     [STONE, STONE, STONE]
-  ], FURNACE, 1)
+  ], FURNACE, 1),
+
+  // 4 кирпича в квадрат -> кирпичный блок (2×2, работает и в инвентаре)
+  shaped(2, [
+    [BRICK, BRICK],
+    [BRICK, BRICK]
+  ], BRICK_BLOCK, 1)
 ];
 
 /* ---- Инструменты (генерируем) ---- */
@@ -78,9 +102,11 @@ for (const m of TOOL_MATS) {
 export const SMELTING = {
   [IRON]:   { id: IRON_INGOT,   time: 5 },
   [COPPER]: { id: COPPER_INGOT, time: 5 },
-  [GOLD]:   { id: GOLD_INGOT,   time: 5 }
+  [GOLD]:   { id: GOLD_INGOT,   time: 5 },
+  [SAND]:   { id: GLASS,        time: 5 },
+  [CLAY]:   { id: BRICK,        time: 5 }
 };
-export const FUEL_VALUE = { [COAL]: 8 };  // 1 уголь = 8 операций
+export const FUEL_VALUE = { [COAL_ITEM]: 8 };  // 1 уголь = 8 операций
 
 /* ============================================================
    Поиск рецепта по сетке крафта
@@ -118,9 +144,10 @@ export function findRecipe(grid, size) {
   if (!cut) return null;
   const h = cut.length, w = cut[0].length;
   for (const r of RECIPES) {
-    if (r.size > size) continue;
     const ph = r.pattern.length, pw = r.pattern[0].length;
     if (ph !== h || pw !== w) continue;
+    // рецепт не должен требовать сетку больше, чем у игрока
+    if (ph > size || pw > size) continue;
     let ok = true;
     for (let y = 0; y < h && ok; y++) {
       for (let x = 0; x < w && ok; x++) {

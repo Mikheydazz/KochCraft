@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import {
   AIR, WATER, STONE, GRASS, DIRT, SAND, BEDROCK, LOG, LEAVES, COAL, IRON, COPPER, GOLD, DIAMOND,
+  GLASS, FLOWING_WATER_1,
   CS, WORLD_HEIGHT, SEA_LEVEL, RD_GEN, BIOME_OCEAN, BIOME_FOREST, BIOME_PLAINS,
   FACES, ATLAS_COLS, ATLAS_ROWS
 } from './constants.js';
 import { perlin, fbm2, hash2 } from './noise.js';
-import { BLOCK_DEFS } from './blocks.js';
-import { scene, blockMaterial, waterMaterial } from './scene.js';
+import { BLOCK_DEFS, isWaterBlock } from './blocks.js';
+import { scene, blockMaterial, waterMaterial, glassMaterial } from './scene.js';
 
 export function terrainHeight(wx, wz) {
   const cont  = fbm2(wx * 0.0035, wz * 0.0035, 4);
@@ -42,12 +43,14 @@ function oreAt(x, y, z) {
   return 0;
 }
 
+export const worldEvents = { onBlockChange: null };
 export class Chunk {
   constructor(cx, cz) {
     this.cx = cx; this.cz = cz;
     this.blocks = new Uint8Array(CS * CS * WORLD_HEIGHT);
     this.mesh = null;
     this.waterMesh = null;
+    this.glassMesh = null;
     this.generated = false;
     this.dirty = true;
   }
@@ -73,12 +76,63 @@ export const world = {
     const lx = wx - cx * CS, lz = wz - cz * CS;
     c.blocks[c.idx(lx, wy, lz)] = v;
     c.dirty = true;
-    if (lx === 0)        { const n = this.getChunk(cx-1, cz); if (n) n.dirty = true; }
-    if (lx === CS - 1)   { const n = this.getChunk(cx+1, cz); if (n) n.dirty = true; }
-    if (lz === 0)        { const n = this.getChunk(cx, cz-1); if (n) n.dirty = true; }
-    if (lz === CS - 1)   { const n = this.getChunk(cx, cz+1); if (n) n.dirty = true; }
+
+    // фиксируем изменение
+    const idx = (wy * CS + lz) * CS + lx;
+    const ck = cx + ',' + cz;
+    let m = changesByChunk.get(ck);
+    if (!m) { m = new Map(); changesByChunk.set(ck, m); }
+    m.set(idx, v);
+
+    if (lx === 0)        { const n = this.getChunk(cx - 1, cz); if (n) n.dirty = true; }
+    if (lx === CS - 1)   { const n = this.getChunk(cx + 1, cz); if (n) n.dirty = true; }
+    if (lz === 0)        { const n = this.getChunk(cx, cz - 1); if (n) n.dirty = true; }
+    if (lz === CS - 1)   { const n = this.getChunk(cx, cz + 1); if (n) n.dirty = true; }
+
+    if (worldEvents.onBlockChange) worldEvents.onBlockChange(wx, wy, wz);
   }
 };
+
+/* ============================================================
+   ИЗМЕНЕНИЯ БЛОКОВ (для сохранений)
+   ============================================================ */
+const changesByChunk = new Map();   // "cx,cz" -> Map<localIdx, blockId>
+
+export function clearAllChanges() {
+  changesByChunk.clear();
+}
+
+export function getAllChanges() {
+  const out = [];
+  for (const [ck, m] of changesByChunk) {
+    const comma = ck.indexOf(',');
+    const cx = parseInt(ck.slice(0, comma), 10);
+    const cz = parseInt(ck.slice(comma + 1), 10);
+    for (const [idx, v] of m) {
+      const lx = idx % CS;
+      const lz = Math.floor(idx / CS) % CS;
+      const ly = Math.floor(idx / (CS * CS));
+      out.push({ x: cx * CS + lx, y: ly, z: cz * CS + lz, v });
+    }
+  }
+  return out;
+}
+
+export function applyChanges(changes) {
+  changesByChunk.clear();
+  if (!changes) return;
+  for (const c of changes) {
+    const cx = Math.floor(c.x / CS);
+    const cz = Math.floor(c.z / CS);
+    const lx = c.x - cx * CS;
+    const lz = c.z - cz * CS;
+    const idx = (c.y * CS + lz) * CS + lx;
+    const ck = cx + ',' + cz;
+    let m = changesByChunk.get(ck);
+    if (!m) { m = new Map(); changesByChunk.set(ck, m); }
+    m.set(idx, c.v);
+  }
+}
 
 function setLocal(chunk, wx, wy, wz, block, onlyIfAir) {
   const lx = wx - chunk.cx * CS, lz = wz - chunk.cz * CS;
@@ -136,6 +190,13 @@ export function generateChunk(chunk) {
           }
     }
   }
+  // накладываем сохранённые изменения поверх процедурной генерации
+  const ck = cx + ',' + cz;
+  const chMap = changesByChunk.get(ck);
+  if (chMap) {
+    for (const [idx, v] of chMap) chunk.blocks[idx] = v;
+  }
+
   chunk.generated = true;
   chunk.dirty = true;
 }
@@ -168,26 +229,53 @@ export function buildChunkMesh(chunk) {
 
   const pos = [], nor = [], uvs = [], ind = [];
   const wpos = [], wnor = [], wuvs = [], wind = [];
+  const gpos = [], gnor = [], guvs = [], gind = [];
 
   for (let y = 0; y < WORLD_HEIGHT; y++)
     for (let z = 0; z < CS; z++)
       for (let x = 0; x < CS; x++) {
         const b = chunk.blocks[chunk.idx(x, y, z)];
         if (b === AIR) continue;
-        const isWater = b === WATER;
+        const isWater = isWaterBlock(b);
+        const isGlass = b === GLASS;
         const def = BLOCK_DEFS[b];
-        const P = isWater ? wpos : pos;
-        const N = isWater ? wnor : nor;
-        const U = isWater ? wuvs : uvs;
-        const I = isWater ? wind : ind;
+        const P = isWater ? wpos : (isGlass ? gpos : pos);
+        const N = isWater ? wnor : (isGlass ? gnor : nor);
+        const U = isWater ? wuvs : (isGlass ? guvs : uvs);
+        const I = isWater ? wind : (isGlass ? gind : ind);
+
+        // ---- высота воды: 1.0 (источник) ... 0.2 (5-й уровень) ----
+        let waterH = 1.0;
+        if (isWater) {
+          const level = b === WATER ? 0 : (b - FLOWING_WATER_1 + 1);
+          waterH = 1.0 - level * 0.16;
+          // если сверху тоже вода — тянем боковую грань до потолка,
+          // иначе будет видна щель между блоками разных уровней
+          const above = pad[(y + 2) * PW * PW + (z + 1) * PW + (x + 1)];
+          if (isWaterBlock(above)) waterH = 1.0;
+        }
 
         for (let f = 0; f < 6; f++) {
           const F = FACES[f];
           const nx = x + F.dir[0], ny = y + F.dir[1], nz = z + F.dir[2];
           const nbl = pad[(ny + 1) * PW * PW + (nz + 1) * PW + (nx + 1)];
+
           if (nbl !== AIR) {
-            if (!(nbl === WATER && !isWater)) continue;
+            const curIsWater = isWaterBlock(b);
+            const nbIsWater  = isWaterBlock(nbl);
+            const curIsGlass = b === GLASS;
+            const nbIsGlass  = nbl === GLASS;
+            let render;
+            if (curIsWater) {
+              render = false;
+            } else if (curIsGlass) {
+              render = !nbIsGlass;
+            } else {
+              render = nbIsWater || nbIsGlass;
+            }
+            if (!render) continue;
           }
+
           let tile;
           if (f === 2)      tile = def.top;
           else if (f === 3) tile = def.bottom;
@@ -201,7 +289,11 @@ export function buildChunkMesh(chunk) {
           const base = P.length / 3;
           for (let i = 0; i < 4; i++) {
             const c = F.corners[i];
-            P.push(x + c[0], y + c[1], z + c[2]);
+            let cy = c[1];
+            // для воды верхняя грань и верхние рёбра боковых граней
+            // опускаются на её фактическую высоту
+            if (isWater && cy === 1) cy = waterH;
+            P.push(x + c[0], y + cy, z + c[2]);
             N.push(F.dir[0], F.dir[1], F.dir[2]);
             const t = F.uvs[i];
             U.push(tu0 + t[0] * du, tv0 + t[1] * dv);
@@ -234,12 +326,28 @@ export function buildChunkMesh(chunk) {
     scene.add(m);
     chunk.waterMesh = m;
   }
+
+  if (chunk.glassMesh) { scene.remove(chunk.glassMesh); chunk.glassMesh.geometry.dispose(); chunk.glassMesh = null; }
+  if (gpos.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(gpos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(gnor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(guvs, 2));
+    g.setIndex(gind);
+    const m = new THREE.Mesh(g, glassMaterial);
+    m.position.set(chunk.cx * CS, 0, chunk.cz * CS);
+    m.renderOrder = 1;       // поверх прозрачных
+    scene.add(m);
+    chunk.glassMesh = m;
+  }
+
   chunk.dirty = false;
 }
 
 export function disposeChunk(c) {
   if (c.mesh) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh = null; }
   if (c.waterMesh) { scene.remove(c.waterMesh); c.waterMesh.geometry.dispose(); c.waterMesh = null; }
+  if (c.glassMesh) { scene.remove(c.glassMesh); c.glassMesh.geometry.dispose(); c.glassMesh = null; }
 }
 
 export function updateChunks(px, pz) {
@@ -291,7 +399,7 @@ export function raycastVoxel(origin, dir, maxDist) {
   let nx = 0, ny = 0, nz = 0, t = 0;
   for (let i = 0; i < 200; i++) {
     const b = world.getBlock(x, y, z);
-    if (b !== AIR && b !== WATER) return { x, y, z, block: b, nx, ny, nz };
+    if (b !== AIR && !isWaterBlock(b)) return { x, y, z, block: b, nx, ny, nz };
     if (tmx < tmy && tmx < tmz) { x += stepX; t = tmx; tmx += tdx; nx = -stepX; ny = 0; nz = 0; }
     else if (tmy < tmz)         { y += stepY; t = tmy; tmy += tdy; nx = 0; ny = -stepY; nz = 0; }
     else                        { z += stepZ; t = tmz; tmz += tdz; nx = 0; ny = 0; nz = -stepZ; }

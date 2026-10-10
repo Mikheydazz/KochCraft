@@ -47,3 +47,14 @@ export function invRemoveFromSlot(i, n = 1) {
   if (s.count <= 0) slots[i] = null;
   return true;
 }
+
+export function loadInventory(arr) {
+  for (let i = 0; i < INVENTORY_SIZE; i++) {
+    const s = arr ? arr[i] : null;
+    slots[i] = s ? { id: s.id, count: s.count, durability: s.durability } : null;
+  }
+}
+
+export function getInventorySnapshot() {
+  return slots.map(s => s ? { id: s.id, count: s.count, durability: s.durability } : null);
+}

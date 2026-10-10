@@ -15,9 +15,16 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
 const atlas = makeAtlas();
-export const blockMaterial = new THREE.MeshLambertMaterial({ map: atlas });
+export const blockMaterial = new THREE.MeshLambertMaterial({
+  map: atlas,
+  alphaTest: 0.5        // отсекает полностью прозрачные пиксели
+});
 export const waterMaterial = new THREE.MeshLambertMaterial({
   map: atlas, transparent: true, opacity: 0.72, depthWrite: false
+});
+export const glassMaterial = new THREE.MeshLambertMaterial({
+  map: atlas, transparent: true, opacity: 0.85,
+  depthWrite: false, side: THREE.DoubleSide
 });
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.82));

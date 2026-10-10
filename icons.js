@@ -1,23 +1,32 @@
-import { ATLAS_COLS, STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT, BEEF, PORK } from './constants.js';
+import { ATLAS_COLS, STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT, BEEF, PORK, COAL_ITEM, CLAY, BRICK } from './constants.js';
 import { BLOCK_DEFS, isBlock } from './blocks.js';
 import { TOOLS, isTool } from './items.js';
 
 let atlasRef = null;
-const cache = new Map();
+const canvasCache = new Map();
+const urlCache = new Map();
 
 export function initIcons(atlasCanvas) {
   atlasRef = atlasCanvas;
-  cache.clear();
+  canvasCache.clear();
+  urlCache.clear();
+}
+
+export function getIconCanvas(id) {
+  if (canvasCache.has(id)) return canvasCache.get(id);
+  const cv = buildIconCanvas(id);
+  canvasCache.set(id, cv);
+  return cv;
 }
 
 export function getIcon(id) {
-  if (cache.has(id)) return cache.get(id);
-  const url = buildIcon(id);
-  cache.set(id, url);
+  if (urlCache.has(id)) return urlCache.get(id);
+  const url = getIconCanvas(id).toDataURL();
+  urlCache.set(id, url);
   return url;
 }
 
-function buildIcon(id) {
+function buildIconCanvas(id) {
   const size = 48;
   const cv = document.createElement('canvas');
   cv.width = size; cv.height = size;
@@ -28,7 +37,7 @@ function buildIcon(id) {
   else if (isTool(id))  drawToolIcon(ctx, size, id);
   else                  drawItemIcon(ctx, size, id);
 
-  return cv.toDataURL();
+  return cv;
 }
 
 /* ============================================================
@@ -251,6 +260,125 @@ function drawItemIcon(ctx, size, id) {
     drawIngot(ctx, size, id);
   else if (id === BEEF) drawMeat(ctx, size, '#8b2f2f', '#5a1a1a');
   else if (id === PORK) drawMeat(ctx, size, '#e8a0a0', '#c07070');
+  else if (id === COAL_ITEM) drawCoal(ctx, size);
+  else if (id === CLAY) drawClay(ctx, size);
+  else if (id === BRICK) drawBrick(ctx, size);
+}
+
+function drawClay(ctx, size) {
+  const cx = size / 2, cy = size / 2 + size * 0.02;
+  const R = size * 0.30;
+  // мягкий округлый комок
+  ctx.beginPath();
+  ctx.moveTo(cx - R, cy + R * 0.4);
+  ctx.quadraticCurveTo(cx - R * 1.1, cy - R * 0.6, cx - R * 0.3, cy - R * 0.9);
+  ctx.quadraticCurveTo(cx + R * 0.6, cy - R * 1.05, cx + R * 1.05, cy - R * 0.25);
+  ctx.quadraticCurveTo(cx + R * 1.15, cy + R * 0.7, cx + R * 0.35, cy + R * 0.85);
+  ctx.quadraticCurveTo(cx - R * 0.5, cy + R * 0.95, cx - R, cy + R * 0.4);
+  ctx.closePath();
+  ctx.fillStyle = '#b8a89a';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(70,55,45,0.7)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // тёмная тень снизу
+  ctx.fillStyle = 'rgba(90,72,60,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(cx - R * 0.1, cy + R * 0.5, R * 0.85, R * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // светлый блик
+  ctx.fillStyle = 'rgba(255,250,240,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(cx - R * 0.35, cy - R * 0.4, R * 0.32, R * 0.20, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // трещинка
+  ctx.strokeStyle = 'rgba(120,100,85,0.7)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx + R * 0.15, cy - R * 0.2);
+  ctx.lineTo(cx - R * 0.05, cy + R * 0.25);
+  ctx.lineTo(cx + R * 0.2, cy + R * 0.5);
+  ctx.stroke();
+}
+
+function drawBrick(ctx, size) {
+  const w = size * 0.62, h = size * 0.38;
+  const x = (size - w) / 2, y = (size - h) / 2;
+
+  // тело кирпича
+  ctx.fillStyle = '#a8503a';
+  ctx.fillRect(x, y, w, h);
+
+  // верхняя светлая кромка
+  ctx.fillStyle = 'rgba(255,205,180,0.5)';
+  ctx.fillRect(x, y, w, 2);
+
+  // нижняя тёмная кромка
+  ctx.fillStyle = 'rgba(60,25,15,0.55)';
+  ctx.fillRect(x, y + h - 2, w, 2);
+
+  // мелкая «шероховатость»
+  for (let i = 0; i < 22; i++) {
+    const px = x + Math.random() * w;
+    const py = y + 3 + Math.random() * (h - 6);
+    ctx.fillStyle = Math.random() < 0.5
+      ? 'rgba(255,255,255,0.10)'
+      : 'rgba(0,0,0,0.10)';
+    ctx.fillRect(px, py, 1.4, 1.4);
+  }
+
+  // обводка
+  ctx.strokeStyle = 'rgba(40,15,10,0.75)';
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function drawCoal(ctx, size) {
+  const cx = size / 2, cy = size / 2;
+  const R = size * 0.32;
+  // рваный многоугольник — кусок угля
+  const pts = [];
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const r = R * (0.75 + Math.random() * 0.4);
+    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = '#1c1c20';
+  ctx.fill();
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // грани-блики
+  ctx.strokeStyle = 'rgba(120,120,130,.7)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - R * 0.55, cy - R * 0.15);
+  ctx.lineTo(cx, cy - R * 0.55);
+  ctx.lineTo(cx + R * 0.6, cy - R * 0.1);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - R * 0.55);
+  ctx.lineTo(cx + R * 0.05, cy + R * 0.5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - R * 0.55, cy - R * 0.15);
+  ctx.lineTo(cx - R * 0.3, cy + R * 0.4);
+  ctx.stroke();
+
+  // тёмные провалы
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.beginPath();
+  ctx.ellipse(cx + R * 0.1, cy + R * 0.15, R * 0.18, R * 0.12, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawMeat(ctx, size, color, dark) {

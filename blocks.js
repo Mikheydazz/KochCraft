@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import {
   AIR, GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, COAL, IRON,
-  COPPER, GOLD, DIAMOND, BEDROCK, PLANKS, CRAFTING_TABLE, FURNACE,
+  COPPER, GOLD, DIAMOND, BEDROCK, PLANKS, CRAFTING_TABLE, FURNACE, GLASS,
+  FLOWING_WATER_1, FLOWING_WATER_2, FLOWING_WATER_3, FLOWING_WATER_4, FLOWING_WATER_5,
+  BRICK_BLOCK,
   T, ATLAS_COLS, ATLAS_ROWS
 } from './constants.js';
 
@@ -21,15 +23,25 @@ export const BLOCK_DEFS = {
   [BEDROCK]: { name: 'Бедрок',  all: T.BEDROCK },
   [PLANKS]:  { name: 'Доски',   all: T.PLANKS },
   [CRAFTING_TABLE]: { name: 'Верстак', top: T.CRAFTING_TOP, bottom: T.PLANKS, side: T.CRAFTING_SIDE },
-  [FURNACE]: { name: 'Печь',    top: T.FURNACE_TOP, bottom: T.FURNACE_TOP, side: T.FURNACE_SIDE, front: T.FURNACE_FRONT }
+  [FURNACE]: { name: 'Печь',    top: T.FURNACE_TOP, bottom: T.FURNACE_TOP, side: T.FURNACE_SIDE, front: T.FURNACE_FRONT },
+  [GLASS]:   { name: 'Стекло',  all: T.GLASS },
+  [FLOWING_WATER_1]: { name: 'Вода', all: T.WATER, liquid: true },
+  [FLOWING_WATER_2]: { name: 'Вода', all: T.WATER, liquid: true },
+  [FLOWING_WATER_3]: { name: 'Вода', all: T.WATER, liquid: true },
+  [FLOWING_WATER_4]: { name: 'Вода', all: T.WATER, liquid: true },
+  [FLOWING_WATER_5]: { name: 'Вода', all: T.WATER, liquid: true },
+  [BRICK_BLOCK]: { name: 'Кирпичный блок', all: T.BRICK }
 };
 for (const id in BLOCK_DEFS) {
   const d = BLOCK_DEFS[id];
   if (d.all !== undefined) { d.top = d.bottom = d.side = d.all; }
 }
 
-export const isSolid = (b) => b !== AIR && b !== WATER;
-export const isBlock = (id) => id >= 1 && id <= 16;
+export const isWaterBlock = (b) =>
+  b === WATER || (b >= FLOWING_WATER_1 && b <= FLOWING_WATER_5);
+
+export const isSolid = (b) => b !== AIR && !isWaterBlock(b);
+export const isBlock = (id) => BLOCK_DEFS[id] !== undefined;
 
 /* ============================================================
    АТЛАС ТЕКСТУР
@@ -186,6 +198,58 @@ export function makeAtlas() {
     ctx.fillRect(ox + 5, oy + 8, 2, 3);
     ctx.fillRect(ox + 8, oy + 7, 2, 4);
     ctx.fillRect(ox + 11, oy + 8, 2, 3);
+  }
+  /* ---- Стекло: голубая полупрозрачная заливка + рамка + блик ---- */
+  {
+    const [ox, oy] = origin(T.GLASS);
+    ctx.clearRect(ox, oy, S, S);
+
+    // заливка — alpha 0.35, даст голубоватый оттенок
+    ctx.fillStyle = 'rgba(150, 210, 255, 0.35)';
+    ctx.fillRect(ox, oy, S, S);
+
+    // обводка — плотнее
+    ctx.fillStyle = 'rgba(210, 235, 255, 0.9)';
+    ctx.fillRect(ox, oy, S, 1);
+    ctx.fillRect(ox, oy + S - 1, S, 1);
+    ctx.fillRect(ox, oy, 1, S);
+    ctx.fillRect(ox + S - 1, oy, 1, S);
+
+    // блик в углу
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(ox + 3, oy + 3, 4, 1);
+    ctx.fillRect(ox + 3, oy + 3, 1, 4);
+    ctx.fillRect(ox + 10, oy + 11, 3, 1);
+  }
+
+  /* ---- Кирпичный блок: кирпичная кладка ---- */
+  {
+    const [ox, oy] = origin(T.BRICK);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ox, oy, S, S);
+    ctx.clip();
+
+    // фон — цвет шва
+    ctx.fillStyle = '#9c9c8e';
+    ctx.fillRect(ox, oy, S, S);
+    // кирпичи 4 x 2, с поперечным смещением как в кладке
+    const brickW = 8, brickH = 4, gap = 1;
+    for (let row = 0; row < 4; row++) {
+      const y = row * (brickH + gap);
+      const offset = (row % 2) * (brickW / 2);
+      for (let col = -1; col < 3; col++) {
+        const x = col * (brickW + gap) + offset;
+        const d = (Math.random() - 0.5) * 18;
+        ctx.fillStyle = `rgb(${Math.round(158 + d)},${Math.round(76 + d)},${Math.round(52 + d)})`;
+        ctx.fillRect(ox + x, oy + y, brickW, brickH);
+        // светлая кромка сверху
+        ctx.fillStyle = 'rgba(255,220,200,0.35)';
+        ctx.fillRect(ox + x, oy + y, brickW, 1);
+      }
+    }
+
+    ctx.restore();
   }
 
   const tex = new THREE.CanvasTexture(cv);

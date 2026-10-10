@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WORLD_HEIGHT, SEA_LEVEL, WATER } from './constants.js';
 import { world } from './world.js';
-import { isSolid } from './blocks.js';
+import { isSolid, isWaterBlock } from './blocks.js';
 import { camera } from './scene.js';
 import { input } from './input.js';
 
@@ -18,11 +18,13 @@ export const player = {
   height: 1.8,
   radius: 0.3,
 
-  /* здоровье */
   hp: 20,
   maxHp: 20,
   hurtCooldown: 0,
-  inAirMaxY: null
+  inAirMaxY: null,
+
+  dead: false,
+  spawnPos: new THREE.Vector3(0, 45, 0)
 };
 
 export function collidesBox(x, y, z, r, h) {
@@ -40,12 +42,19 @@ export function updatePlayer(dt) {
   const p = player;
   const keys = input.keys;
 
-  p.inWater = world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.6), Math.floor(p.pos.z)) === WATER
-           || world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 1.4), Math.floor(p.pos.z)) === WATER;
+  if (p.hurtCooldown > 0) p.hurtCooldown -= dt;
 
- if (p.hurtCooldown > 0) p.hurtCooldown -= dt;
+  /* Мёртв — просто держим камеру на месте */
+  if (p.dead) {
+    camera.position.set(p.pos.x, p.pos.y + 1.62, p.pos.z);
+    camera.rotation.set(p.pitch, p.yaw, 0, 'YXZ');
+    return;
+  }
 
-  // ----- урон от падения -----
+  p.inWater = isWaterBlock(world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 0.6), Math.floor(p.pos.z)))
+           || isWaterBlock(world.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y + 1.4), Math.floor(p.pos.z)));
+
+  /* ----- урон от падения ----- */
   if (p.onGround || p.flying || p.inWater) {
     if (p.inAirMaxY !== null) {
       if (p.onGround && !p.flying && !p.inWater) {
@@ -62,16 +71,12 @@ export function updatePlayer(dt) {
     else if (p.pos.y > p.inAirMaxY) p.inAirMaxY = p.pos.y;
   }
 
-  // ----- смерть/респавн -----
-  if (p.hp <= 0) {
-    p.hp = p.maxHp;
-    p.pos.y = 60;
+  /* ----- смерть (обрабатывается в main.js) ----- */
+  if (p.hp <= 0 && !p.dead) {
+    p.dead = true;
     p.vel.set(0, 0, 0);
-    p.inAirMaxY = null;
-    p.hurtCooldown = 1;
   }
 
-  // Присед и спринт
   p.crouching = !p.flying && (keys['ShiftLeft'] || keys['ShiftRight']) && !p.inWater;
   const wantSprint = (keys['ControlLeft'] || keys['ControlRight']) && !p.crouching && !p.inWater;
   const fwdPressed = keys['KeyW'];
@@ -126,10 +131,7 @@ export function updatePlayer(dt) {
     p.vel.y = 0;
   }
 
-  if (p.pos.y < -20) {
-    p.pos.set(p.pos.x, 60, p.pos.z);
-    p.vel.set(0, 0, 0);
-  }
+  if (p.pos.y < -20) p.pos.y = 60;
 
   const eyeH = p.crouching ? 1.32 : 1.62;
   camera.position.set(p.pos.x, p.pos.y + eyeH, p.pos.z);

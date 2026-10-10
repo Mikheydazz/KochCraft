@@ -50,7 +50,14 @@ export class Perlin {
   }
 }
 
-export const perlin = new Perlin(20240517);
+export let perlin = new Perlin(20240517);
+export let hashSeed = 0;
+
+export function initPerlin(seed) {
+  const s = (seed >>> 0) || 1;
+  perlin = new Perlin(s);
+  hashSeed = s;
+}
 
 export function fbm2(x, y, oct = 4) {
   let a = 0.5, f = 1, s = 0, n = 0;
@@ -63,7 +70,7 @@ export function fbm3(x, y, z, oct = 3) {
   return s / n;
 }
 export function hash2(x, y) {
-  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + (hashSeed | 0);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { itemName, isTool, getTool } from './items.js';
 import { getIcon } from './icons.js';
 import {
@@ -5,12 +6,14 @@ import {
   slots, heldItem, getMode, GameMode, invAdd
 } from './gamemode.js';
 import { updateHandItem } from './viewmodel.js';
-import { renderer } from './scene.js';
+import { renderer, camera } from './scene.js';
 import { world, terrainHeight, biomeAt } from './world.js';
+import { isBlock } from './blocks.js';
 import { player } from './player.js';
 import { mobs } from './mobs.js';
 import { BIOME_OCEAN, BIOME_FOREST } from './constants.js';
 import { findRecipe, SMELTING, FUEL_VALUE } from './recipes.js';
+import { spawnDrop } from './drops.js';
 
 export let activeSlot = 0;
 export const getActiveSlot = () => activeSlot;
@@ -59,9 +62,9 @@ export function selectSlot(i) {
   activeSlot = i;
   hotbarEls.forEach((el, k) => el.classList.toggle('active', k === i));
   const s = slots[i];
-  updateHandItem(s && isBlockId(s.id) ? s.id : 0);
+  updateHandItem(s ? s.id : 0);
 }
-function isBlockId(id) { return id >= 1 && id <= 16; }
+function isBlockId(id) { return isBlock(id); }
 
 function paintSw(sw, id) {
   if (!id) { sw.style.display = 'none'; sw.style.backgroundImage = ''; return; }
@@ -86,7 +89,7 @@ function paintSlot(el, s, showCountAlways) {
 export function refreshHotbar() {
   for (let i = 0; i < HOTBAR_SIZE; i++) paintSlot(hotbarEls[i], slots[i], false);
   const s = slots[activeSlot];
-  updateHandItem(s && isBlockId(s.id) ? s.id : 0);
+  updateHandItem(s ? s.id : 0);
   if (uiContext) renderUI();
 }
 
@@ -223,15 +226,11 @@ function updateHeldUI() {
   heldCount.textContent = getMode() === GameMode.SURVIVAL ? String(held.count) : '';
 }
 
-/* ---- tooltip на mousemove ---- */
+/* ---- наведение на слот → название ---- */
 document.addEventListener('mousemove', (e) => {
   if (!isInventoryOpen()) { hideTooltip(); return; }
-
-  // движение «взятого» предмета
   heldEl.style.left = e.clientX + 'px';
   heldEl.style.top = e.clientY + 'px';
-
-  // определяем слот под курсором
   const el = e.target.closest('.invSlot');
   if (!el || !el._getItem) { hideTooltip(); return; }
   const s = el._getItem();
@@ -239,7 +238,17 @@ document.addEventListener('mousemove', (e) => {
   showTooltip(itemName(s.id), e.clientX, e.clientY);
 });
 
-/* ---- клики ---- */
+/* ---- клик вне панели → выбросить «взятую» вещь ---- */
+invOverlay.addEventListener('mousedown', (e) => {
+  if (e.target.closest('#invPanel')) return;
+  if (!heldItem.value) return;
+  const h = heldItem.value;
+  heldItem.value = null;
+  updateHeldUI();
+  dropInFront(h.id, h.count, h.durability);
+});
+
+/* ---- клики по слотам ---- */
 function onSlotClick(kind, index, button) {
   if (kind === 'output') { handleOutputClick(button); return; }
 
@@ -290,7 +299,7 @@ function onSlotClick(kind, index, button) {
 function refreshHotbarUIOnly() {
   for (let i = 0; i < HOTBAR_SIZE; i++) paintSlot(hotbarEls[i], slots[i], false);
   const s = slots[activeSlot];
-  updateHandItem(s && isBlockId(s.id) ? s.id : 0);
+  updateHandItem(s ? s.id : 0);
 }
 
 function handleOutputClick(button) {
@@ -317,19 +326,32 @@ function handleOutputClick(button) {
 }
 
 /* ============================================================
+   ДРОП В МИР (используется и при клике вне панели)
+   ============================================================ */
+export function dropInFront(id, count, durability) {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const ox = player.pos.x + dir.x * 0.6;
+  const oy = player.pos.y + 1.4 + dir.y * 0.3;
+  const oz = player.pos.z + dir.z * 0.6;
+  spawnDrop(id, count, ox, oy, oz, durability);
+}
+
+/* ============================================================
    ОТКРЫТИЕ / ЗАКРЫТИЕ
    ============================================================ */
 export function openUI(context) {
-  if (uiContext) return;
+  if (uiContext || player.dead) return;
   uiContext = context;
   document.exitPointerLock();
   invOverlay.style.display = 'flex';
-  document.getElementById('overlay').style.display = 'none';
+  const ov = document.getElementById('overlay');
+  if (ov) ov.style.display = 'none';
   buildTop(context);
   renderUI();
 }
 
-export function closeUI() {
+export function closeUI(opts = {}) {
   if (!uiContext) return;
   for (let i = 0; i < 9; i++) {
     if (craftGrid[i]) {
@@ -343,23 +365,24 @@ export function closeUI() {
       { noStack: heldItem.value.durability !== undefined, durability: heldItem.value.durability });
     heldItem.value = null;
   }
-  if (furnace.input)  { invAdd(furnace.input.id, furnace.input.count);   furnace.input = null; }
-  if (furnace.fuel)   { invAdd(furnace.fuel.id, furnace.fuel.count);     furnace.fuel = null; }
-  if (furnace.output) { invAdd(furnace.output.id, furnace.output.count); furnace.output = null; }
-  furnace.progress = 0;
 
   hideTooltip();
   uiContext = null;
   invOverlay.style.display = 'none';
   refreshHotbar();
-  renderer.domElement.requestPointerLock();
+
+  if (!player.dead && !opts.skipLock) {
+    try {
+      const p = renderer.domElement.requestPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) {}
+  }
 }
 
 /* ============================================================
    ПЕЧЬ
    ============================================================ */
 export function tickFurnace(dt) {
-  if (uiContext !== 'furnace') return;
   const recipe = furnace.input ? SMELTING[furnace.input.id] : null;
   const canOutput = recipe && (!furnace.output ||
     (furnace.output.id === recipe.id && furnace.output.count < STACK_MAX));
@@ -370,6 +393,9 @@ export function tickFurnace(dt) {
       furnace.fuel.count--;
       if (furnace.fuel.count <= 0) furnace.fuel = null;
     }
+  } else {
+    furnace.burnLeft -= dt;
+    if (furnace.burnLeft < 0) furnace.burnLeft = 0;
   }
 
   if (recipe && canOutput && furnace.burnLeft > 0) {
@@ -385,9 +411,35 @@ export function tickFurnace(dt) {
     furnace.progress = Math.max(0, furnace.progress - dt * 0.3);
   }
 
-  const fill = invTop.querySelector('.furnaceFill');
-  if (fill) fill.style.width = (furnace.progress * 100) + '%';
-  renderUI();
+  /* обновляем UI только если печь открыта */
+  if (uiContext === 'furnace') {
+    const fill = invTop.querySelector('.furnaceFill');
+    if (fill) fill.style.width = (furnace.progress * 100) + '%';
+    renderUI();
+  }
+}
+
+/* ============================================================
+   СОХРАНЕНИЕ ПЕЧИ
+   ============================================================ */
+export function getFurnaceSnapshot() {
+  return {
+    input:    furnace.input  ? { ...furnace.input  } : null,
+    fuel:     furnace.fuel   ? { ...furnace.fuel   } : null,
+    output:   furnace.output ? { ...furnace.output } : null,
+    progress: furnace.progress,
+    burnLeft: furnace.burnLeft
+  };
+}
+
+export function loadFurnaceSnapshot(snap) {
+  furnace.input    = snap && snap.input  ? { ...snap.input  } : null;
+  furnace.fuel     = snap && snap.fuel   ? { ...snap.fuel   } : null;
+  furnace.output   = snap && snap.output ? { ...snap.output } : null;
+  furnace.progress = (snap && snap.progress) || 0;
+  furnace.burnLeft = (snap && snap.burnLeft) || 0;
+  // если открыто окно печи — перерисовать
+  if (uiContext === 'furnace') renderUI();
 }
 
 /* ============================================================
@@ -414,7 +466,6 @@ export function updateInfo(dt) {
     fpsShown = Math.round(fpsFrames / fpsAcc);
     fpsAcc = 0; fpsFrames = 0;
   }
-  renderHeartsIfChanged();
   const b = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.2), Math.floor(player.pos.z));
   const blockName = BLOCK_NAMES[b] || '—';
   infoEl.innerHTML =
@@ -424,6 +475,8 @@ export function updateInfo(dt) {
     `Под ногами: <b>${blockName}</b><br>` +
     `Мобы: <b>${mobs.length}</b> · Чанков: <b>${world.chunks.size}</b><br>` +
     `Состояние: <b>${player.flying ? 'полёт' : (player.inWater ? 'плавание' : (player.sprinting ? 'бег' : (player.crouching ? 'присед' : 'ходьба')))}</b>`;
+
+  renderHeartsIfChanged();
 }
 
 /* ============================================================
