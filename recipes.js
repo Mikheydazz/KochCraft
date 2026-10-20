@@ -1,6 +1,6 @@
 /* Тонкая обёртка — вся работа в definitions/recipes.js. */
 export { RECIPES, SMELTING, FUEL_VALUE } from './definitions/recipes.js';
-import { getByKey, getById } from '../registry.js';
+import { getByKey, getById } from './registry.js';
 
 /* --- Логика поиска (без изменений) --- */
 function normalizePattern(grid, size) {
