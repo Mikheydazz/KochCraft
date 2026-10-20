@@ -1,5 +1,6 @@
 /* Тонкая обёртка — вся работа в definitions/recipes.js. */
 export { RECIPES, SMELTING, FUEL_VALUE } from './definitions/recipes.js';
+import { getByKey, getById } from '../registry.js';
 
 /* --- Логика поиска (без изменений) --- */
 function normalizePattern(grid, size) {
@@ -37,13 +38,23 @@ export function findRecipe(grid, size) {
     const ph = r.pattern.length, pw = r.pattern[0].length;
     if (ph !== h || pw !== w) continue;
     if (ph > size || pw > size) continue;
+
     let ok = true;
-    for (let y = 0; y < h && ok; y++)
+    for (let y = 0; y < h && ok; y++) {
       for (let x = 0; x < w && ok; x++) {
-        const a = cut[y][x];
-        const b = r.pattern[y][x] || 0;
-        if (a !== b) ok = false;
+        const a = cut[y][x];                    // id из сетки игрока или 0
+        const b = r.pattern[y][x] || 0;         // id, {tool:...} или 0
+
+        if (typeof b === 'object') {
+          // tool-ячейка: подходит любой инструмент нужного типа
+          if (!a) { ok = false; break; }
+          const item = getById(a);
+          if (!item || item.toolType !== b.tool) ok = false;
+        } else {
+          if (a !== b) ok = false;
+        }
       }
+    }
     if (ok) return r;
   }
   return null;

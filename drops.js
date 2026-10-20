@@ -10,7 +10,7 @@ const drops = [];
 const dropGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
 const HALF = 0.14;   // половина высоты кубика дропа
 
-export function spawnDrop(id, count, x, y, z, durability) {
+export function spawnDrop(id, count, x, y, z, durability, extra) {
   const color = isTool(id) ? getTool(id).color : (ITEM_COLORS[id] || '#888');
   const mat = new THREE.MeshLambertMaterial({ color });
   const mesh = new THREE.Mesh(dropGeo, mat);
@@ -18,7 +18,7 @@ export function spawnDrop(id, count, x, y, z, durability) {
   scene.add(mesh);
 
   drops.push({
-    id, count, durability,
+    id, count, durability, extra,
     pos: new THREE.Vector3(x, y, z),
     vel: new THREE.Vector3(
       (Math.random() - 0.5) * 2.0,
@@ -120,10 +120,25 @@ export function updateDrops(dt) {
       const dist = Math.hypot(dx, dy, dz);
 
       if (dist < 1.1) {
-        invAdd(d.id, d.count, {
-          noStack: d.durability !== undefined,
-          durability: d.durability
-        });
+        if (d.extra) {
+          // Дроп с доп. данными (например, текст книги) — только в пустой слот
+          let placed = false;
+          for (let j = 0; j < INVENTORY_SIZE; j++) {
+            if (!slots[j]) {
+              slots[j] = { id: d.id, count: d.count };
+              if (d.durability !== undefined) slots[j].durability = d.durability;
+              Object.assign(slots[j], d.extra);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) continue;
+        } else {
+          invAdd(d.id, d.count, {
+            noStack: d.durability !== undefined,
+            durability: d.durability
+          });
+        }
         scene.remove(d.mesh);
         d.mesh.material.dispose();
         drops.splice(i, 1);

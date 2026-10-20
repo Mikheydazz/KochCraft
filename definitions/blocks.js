@@ -35,7 +35,8 @@ export const LEAVES = registerBlock({
 export const COAL = registerBlock({
   id: 8, key: 'coal_ore', name: 'Угольная руда',
   all: T.COAL, hardness: 1.9, creative: true,
-  toolReq: { tool: 'pickaxe', tier: 1 }
+  toolReq: { tool: 'pickaxe', tier: 1 },
+  drop: 'coal'   // дропает не блок, а предмет с ключом 'coal'
 });
 export const IRON = registerBlock({
   id: 9, key: 'iron_ore', name: 'Железная руда',
@@ -84,6 +85,7 @@ export const BRICK_BLOCK = registerBlock({
   id: 65, key: 'brick_block', name: 'Кирпичный блок',
   all: T.BRICK, hardness: 2.0, creative: true
 });
+
 export const CHEST = registerBlock({
   id: 66, key: 'chest', name: 'Сундук',
   top: T.CHEST_TOP, bottom: T.CHEST_TOP,
@@ -91,6 +93,75 @@ export const CHEST = registerBlock({
   hardness: 1.5, creative: true,
   toolReq: { tool: 'axe', tier: 1 }
 });
+
+export const CAULDRON = registerBlock({
+  id: 84, key: 'cauldron', name: 'Чан',
+  top: T.CAULDRON_TOP, bottom: T.CAULDRON_SIDE, side: T.CAULDRON_SIDE,
+  hardness: 2.0, creative: true,
+  toolReq: { tool: 'pickaxe', tier: 1 }
+});
+
+export const CAULDRON_WATER = registerBlock({
+  id: 85, key: 'cauldron_water', name: 'Чан с водой',
+  top: T.CAULDRON_WATER_TOP, bottom: T.CAULDRON_SIDE, side: T.CAULDRON_SIDE,
+  hardness: 2.0, creative: false,
+  toolReq: { tool: 'pickaxe', tier: 1 }
+});
+
+export const SCHOOL_DESK = registerBlock({
+  id: 89, key: 'school_desk', name: 'Парта',
+  top: T.DESK_TOP, bottom: T.DESK_SIDE, side: T.DESK_SIDE,
+  hardness: 1.5, creative: true,
+  toolReq: { tool: 'axe', tier: 1 }
+});
+
+export const SCHOOL_DESK_BOOK = registerBlock({
+  id: 90, key: 'school_desk_book', name: 'Парта с книгой',
+  top: T.DESK_TOP_BOOK, bottom: T.DESK_SIDE, side: T.DESK_SIDE,
+  hardness: 1.5, creative: false,
+  toolReq: { tool: 'axe', tier: 1 }
+});
+
+/* ---- Ступеньки: 3 материала × 4 ориентации ---- */
+function regStairs(prefix, name, tile, baseId, toolReq) {
+  const ors = ['n', 'e', 's', 'w'];
+  const out = {};
+  ors.forEach((o, i) => {
+    const def = {
+      id: baseId + i,
+      key: `${prefix}_stairs_${o}`,
+      name,
+      all: tile,
+      hardness: 1.2,
+      stairs: true,
+      material: prefix,
+      orientation: o
+    };
+    if (toolReq) def.toolReq = toolReq;
+    if (i === 0) def.creative = true;   // в творческом — только базовая
+    out[o] = registerBlock(def);
+  });
+  return out;
+}
+
+export const STONE_STAIRS = regStairs('stone', 'Каменные ступеньки', T.STONE, 67,
+  { tool: 'pickaxe', tier: 1 });
+export const WOODEN_STAIRS = regStairs('wood', 'Деревянные ступеньки', T.PLANKS, 71);
+export const BRICK_STAIRS = regStairs('brick', 'Кирпичные ступеньки', T.BRICK, 75,
+  { tool: 'pickaxe', tier: 1 });
+
+export const STONE_STAIRS_N = STONE_STAIRS.n;
+export const STONE_STAIRS_E = STONE_STAIRS.e;
+export const STONE_STAIRS_S = STONE_STAIRS.s;
+export const STONE_STAIRS_W = STONE_STAIRS.w;
+export const WOODEN_STAIRS_N = WOODEN_STAIRS.n;
+export const WOODEN_STAIRS_E = WOODEN_STAIRS.e;
+export const WOODEN_STAIRS_S = WOODEN_STAIRS.s;
+export const WOODEN_STAIRS_W = WOODEN_STAIRS.w;
+export const BRICK_STAIRS_N = BRICK_STAIRS.n;
+export const BRICK_STAIRS_E = BRICK_STAIRS.e;
+export const BRICK_STAIRS_S = BRICK_STAIRS.s;
+export const BRICK_STAIRS_W = BRICK_STAIRS.w;
 
 /* ---- Уровни текущей воды (генерируются) ---- */
 export const FLOWING_WATER_1 = registerBlock({ id: 58, key: 'flowing_water_1', name: 'Вода', all: T.WATER, liquid: true, hardness: Infinity });

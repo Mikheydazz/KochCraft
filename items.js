@@ -9,16 +9,22 @@ for (const d of [...allItems(), ...allTools()]) {
 
 /* Инструменты — карта id → { type, material, tier, durability, damage, speed, color } */
 export const TOOLS = {};
-for (const d of allTools()) {
-  TOOLS[d.id] = {
-    type: d.toolType, material: d.material, tier: d.tier,
-    durability: d.durability, damage: d.damage, speed: d.speed,
-    color: d.color
-  };
+let _toolsBuilt = false;
+
+function ensureTools() {
+  if (_toolsBuilt) return;
+  _toolsBuilt = true;
+  for (const d of allTools()) {
+    TOOLS[d.id] = {
+      type: d.toolType, material: d.material, tier: d.tier,
+      durability: d.durability, damage: d.damage, speed: d.speed,
+      color: d.color
+    };
+  }
 }
 
-export const isTool = (id) => TOOLS[id] !== undefined;
-export const getTool = (id) => TOOLS[id] || null;
+export const isTool = (id) => { ensureTools(); return TOOLS[id] !== undefined; };
+export const getTool = (id) => { ensureTools(); return TOOLS[id] || null; };
 
 /* Человекочитаемое имя */
 export function itemName(id) {
@@ -28,14 +34,14 @@ export function itemName(id) {
 
 /* Список для творческого инвентаря — берём всё, у чего creative: true.
    Сортируем так: сначала блоки, потом инструменты, потом предметы. */
-const _creativeOrder = [];
-for (const d of allBlocksCreative()) _creativeOrder.push(d.id);
-for (const d of allTools())            _creativeOrder.push(d.id);
-for (const d of allItems())            _creativeOrder.push(d.id);
+import { allDefs } from './registry.js';
 
-function allBlocksCreative() {
-  return [...allBlocks()].filter(d => d.creative);
-}
-import { allBlocks } from './registry.js';
-
-export const CREATIVE_ITEMS = _creativeOrder;
+/* Всё, что помечено "creative: true", автоматически попадает
+   в творческий инвентарь. Порядок — по порядку регистрации:
+   сначала блоки, потом инструменты, потом предметы. */
+export const CREATIVE_ITEMS = (() => {
+  const blocks = allDefs().filter(d => d.type === 'block' && d.creative);
+  const tools  = allDefs().filter(d => d.type === 'tool');
+  const items  = allDefs().filter(d => d.type === 'item');
+  return [...blocks, ...tools, ...items].map(d => d.id);
+})();

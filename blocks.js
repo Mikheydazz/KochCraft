@@ -17,6 +17,34 @@ export const isBlock = (id) => {
   const d = getById(id);
   return !!d && d.type === 'block';
 };
+
+/* ---- Ступеньки ---- */
+export function isStairsBlock(id) {
+  const d = getById(id);
+  return !!(d && d.stairs);
+}
+export function stairsOrientation(id) {
+  const d = getById(id);
+  return d && d.orientation;
+}
+export function stairsMaterial(id) {
+  const d = getById(id);
+  return d && d.material;
+}
+export function baseStairsId(id) {
+  const d = getById(id);
+  if (!d || !d.stairs) return id;
+  for (const b of allBlocks()) {
+    if (b.stairs && b.material === d.material && b.orientation === 'n') return b.id;
+  }
+  return id;
+}
+export function tileForStairsMaterial(mat) {
+  if (mat === 'stone') return T.STONE;
+  if (mat === 'wood')  return T.PLANKS;
+  if (mat === 'brick') return T.BRICK;
+  return T.STONE;
+}
 export { isWaterBlock };
 
 /* ============================================================
@@ -229,6 +257,144 @@ export function makeAtlas() {
       }
     }
     ctx.restore();
+  }
+
+    /* ---- Чан (котёл) ---- */
+  fill(T.CAULDRON_SIDE, 74, 74, 82, 16);
+  {
+    const [ox, oy] = origin(T.CAULDRON_SIDE);
+    for (let x = 2; x < S; x += 4) {
+      ctx.fillStyle = 'rgba(30,30,38,0.7)';
+      ctx.fillRect(ox + x, oy + 2, 1, S - 4);
+    }
+    ctx.fillStyle = '#8a8a92';
+    ctx.fillRect(ox, oy, S, 2);
+    ctx.fillStyle = 'rgba(20,20,26,0.6)';
+    ctx.fillRect(ox, oy + S - 2, S, 2);
+  }
+
+  {
+    const [ox, oy] = origin(T.CAULDRON_TOP);
+    ctx.fillStyle = '#6a6a72';
+    ctx.fillRect(ox, oy, S, S);
+    ctx.fillStyle = '#1a1a20';
+    ctx.fillRect(ox + 3, oy + 3, S - 6, S - 6);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
+  }
+
+  {
+    const [ox, oy] = origin(T.CAULDRON_WATER_TOP);
+    ctx.fillStyle = '#6a6a72';
+    ctx.fillRect(ox, oy, S, S);
+    ctx.fillStyle = '#2e6ac8';
+    ctx.fillRect(ox + 3, oy + 3, S - 6, S - 6);
+    ctx.fillStyle = 'rgba(150,200,255,0.5)';
+    ctx.fillRect(ox + 4, oy + 4, 4, 1);
+    ctx.fillRect(ox + 8, oy + 7, 3, 1);
+    ctx.fillRect(ox + 6, oy + 10, 5, 1);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
+  }
+
+    /* ---- Парта (стол с наклоном) ---- */
+  {
+    const [ox, oy] = origin(T.DESK_SIDE);
+    // фон — дерево
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const d = (Math.random() - 0.5) * 22;
+      ctx.fillStyle = `rgb(${Math.round(158 + d)},${Math.round(116 + d)},${Math.round(68 + d)})`;
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+    // ножки
+    ctx.fillStyle = 'rgba(70,45,20,0.9)';
+    ctx.fillRect(ox + 2, oy, 3, S);
+    ctx.fillRect(ox + S - 5, oy, 3, S);
+    // верхняя и нижняя планки
+    ctx.fillStyle = 'rgba(90,60,30,0.8)';
+    ctx.fillRect(ox, oy + 1, S, 2);
+    ctx.fillRect(ox, oy + S - 5, S, 2);
+    // контур
+    ctx.strokeStyle = 'rgba(40,25,10,0.7)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
+  }
+  {
+    const [ox, oy] = origin(T.DESK_TOP);
+    // фон
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const d = (Math.random() - 0.5) * 18;
+      ctx.fillStyle = `rgb(${Math.round(168 + d)},${Math.round(126 + d)},${Math.round(74 + d)})`;
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+    // наклонная поверхность — трапеция
+    ctx.fillStyle = 'rgba(110,74,38,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(ox + 1, oy + S - 2);
+    ctx.lineTo(ox + S - 1, oy + S - 2);
+    ctx.lineTo(ox + S - 4, oy + 2);
+    ctx.lineTo(ox + 4, oy + 2);
+    ctx.closePath();
+    ctx.fill();
+    // внутренняя площадка (светлее)
+    ctx.fillStyle = 'rgba(180,138,86,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(ox + 3, oy + S - 3);
+    ctx.lineTo(ox + S - 3, oy + S - 3);
+    ctx.lineTo(ox + S - 5, oy + 4);
+    ctx.lineTo(ox + 5, oy + 4);
+    ctx.closePath();
+    ctx.fill();
+    // блик на верхней кромке
+    ctx.fillStyle = 'rgba(220,180,120,0.6)';
+    ctx.fillRect(ox + 5, oy + 4, S - 10, 1);
+    // контур
+    ctx.strokeStyle = 'rgba(50,32,16,0.85)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
+  }
+  {
+    const [ox, oy] = origin(T.DESK_TOP_BOOK);
+    // тот же верх + книга
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const d = (Math.random() - 0.5) * 18;
+      ctx.fillStyle = `rgb(${Math.round(168 + d)},${Math.round(126 + d)},${Math.round(74 + d)})`;
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+    ctx.fillStyle = 'rgba(110,74,38,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(ox + 1, oy + S - 2);
+    ctx.lineTo(ox + S - 1, oy + S - 2);
+    ctx.lineTo(ox + S - 4, oy + 2);
+    ctx.lineTo(ox + 4, oy + 2);
+    ctx.closePath();
+    ctx.fill();
+    // книга лежит на наклонной поверхности
+    ctx.save();
+    ctx.fillStyle = '#8a3a1a';
+    ctx.fillRect(ox + 4, oy + 5, S - 8, S - 9);
+    ctx.fillStyle = '#f4ecd0';
+    ctx.fillRect(ox + 5, oy + 6, S - 10, S - 11);
+    ctx.fillStyle = '#5c2410';
+    ctx.fillRect(ox + 5, oy + 6, 2, S - 11);
+    // полоски страниц
+    ctx.strokeStyle = 'rgba(180,160,120,0.5)';
+    ctx.lineWidth = 0.7;
+    for (let i = 1; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + 7, oy + 6 + i * 2);
+      ctx.lineTo(ox + S - 5, oy + 6 + i * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(50,32,16,0.9)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + 4.5, oy + 5.5, S - 9, S - 10);
+    ctx.restore();
+    // контур плитки
+    ctx.strokeStyle = 'rgba(50,32,16,0.85)';
+    ctx.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
   }
 
     /* ---- Сундук: тёмное дерево + обвязка + замок ---- */

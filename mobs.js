@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { AIR, WATER, GRASS, SAND, WORLD_HEIGHT, SEA_LEVEL, CS, BEEF, PORK } from './constants.js';
-import { world } from './world.js';
+import { AIR, WATER, GRASS, SAND, WORLD_HEIGHT, SEA_LEVEL, CS, BEEF, PORK, BIOME_DESERT, BIOME_MOUNTAINS } from './constants.js';
+import { world, biomeAt } from './world.js';
 import { scene } from './scene.js';
 import { player, collidesBox } from './player.js';
 import { invAdd, getMode, GameMode } from './gamemode.js';
@@ -385,9 +385,16 @@ function trySpawnMob() {
     const ground = world.getBlock(wx, sy - 1, wz);
     if (ground !== GRASS && ground !== SAND) continue;
 
-    // зомби временно отключены
-    const r = Math.random();
-    const type = r < 0.4 ? 'cow' : (r < 0.7 ? 'pig' : 'schoolboy');
+    const biome = biomeAt(wx, wz, sy - 1);
+    /* зомби временно отключены */
+    let type;
+    if (biome === BIOME_DESERT || biome === BIOME_MOUNTAINS) {
+      // в пустыне и горах — только школьники
+      type = 'schoolboy';
+    } else {
+      const r = Math.random();
+      type = r < 0.4 ? 'cow' : (r < 0.7 ? 'pig' : 'schoolboy');
+    }
     mobs.push(new Mob(type, wx + 0.5, sy + 0.1, wz + 0.5));
     return;
   }

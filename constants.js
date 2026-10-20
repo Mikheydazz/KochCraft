@@ -1,23 +1,18 @@
-import {
-  GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, COAL, IRON,
-  COPPER, GOLD, DIAMOND, BEDROCK, PLANKS, CRAFTING_TABLE, FURNACE,
-  GLASS, BRICK_BLOCK, CHEST,
-  FLOWING_WATER_1, FLOWING_WATER_2, FLOWING_WATER_3, FLOWING_WATER_4, FLOWING_WATER_5,
-  STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT, BEEF, PORK, COAL_ITEM, CLAY, BRICK,
-  T
-} from './definitions/index.js';
+/* Порядок загрузки: сначала регистрируем всё из definitions/, потом
+   строим производные таблицы. Дальше — только собственные константы. */
+import './definitions/index.js';
 import { allBlocks, getById } from './registry.js';
 
-export {
-  GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, COAL, IRON,
-  COPPER, GOLD, DIAMOND, BEDROCK, PLANKS, CRAFTING_TABLE, FURNACE,
-  GLASS, BRICK_BLOCK, CHEST,
-  FLOWING_WATER_1, FLOWING_WATER_2, FLOWING_WATER_3, FLOWING_WATER_4, FLOWING_WATER_5,
-  STICK, IRON_INGOT, COPPER_INGOT, GOLD_INGOT, BEEF, PORK, COAL_ITEM, CLAY, BRICK,
-  T
-};
+/* Реэкспортируем всё содержимое реестра — новые блоки, предметы,
+   инструменты и биомы появляются здесь автоматически. */
+export * from './definitions/index.js';
 
-export * from './definitions/tools.js';
+/* Реэкспорт утилит реестра, чтобы не тянуть их в каждый файл отдельно */
+export { getById, getByKey, getBiomeById, getBiomeByKey,
+         getBiomeName, findBiomeByAlias,
+         allDefs, allBlocks, allItems, allTools, allBiomes,
+         isBlock as isBlockType, isTool as isToolType, isItem as isItemType }
+       from './registry.js';
 
 export const AIR = 0;
 
@@ -27,12 +22,10 @@ export const ATLAS_ROWS = 8;
 
 /* ---- Мир ---- */
 export const CS = 16;
-export const WORLD_HEIGHT = 64;
+export const WORLD_HEIGHT = 96;
 export const SEA_LEVEL = 26;
 export const RD_GEN = 5;
 export const RD_MESH = 4;
-
-export const BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_OCEAN = 2;
 
 /* ---- Грани куба ---- */
 export const FACES = [
@@ -52,8 +45,12 @@ for (const b of allBlocks()) {
   if (b.toolReq) BLOCK_TOOL_REQ[b.id] = b.toolReq;
 }
 
+/* ---- Утилиты, специфичные для воды ---- */
 export const isWaterBlock = (b) =>
-  b === WATER || (b >= FLOWING_WATER_1 && b <= FLOWING_WATER_5);
+  b !== AIR && (() => {
+    const d = getById(b);
+    return d && d.liquid;
+  })();
 
 export const isSolid = (b) => b !== AIR && !isWaterBlock(b);
 export const isBlock = (id) => {

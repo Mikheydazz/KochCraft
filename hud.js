@@ -11,7 +11,7 @@ import { world, terrainHeight, biomeAt } from './world.js';
 import { isBlock } from './blocks.js';
 import { player } from './player.js';
 import { mobs } from './mobs.js';
-import { BIOME_OCEAN, BIOME_FOREST } from './constants.js';
+import { getBiomeName, getById } from './constants.js';
 import { findRecipe, SMELTING, FUEL_VALUE } from './recipes.js';
 import { spawnDrop } from './drops.js';
 import { getChestSlots } from './chests.js';
@@ -323,19 +323,43 @@ function handleOutputClick(button) {
   if (!craftResult) return;
   const out = craftResult.output;
   const s = heldItem.value;
-  if (s && (s.id !== out.id || s.count + out.count > STACK_MAX)) return;
+
+  const toolInfo = getTool(out.id);
+  const isToolRecipe = !!toolInfo;
+
+  // Инструменты не стакаются — рука должна быть пуста
+  if (isToolRecipe) {
+    if (s) return;
+  } else {
+    if (s && (s.id !== out.id || s.count + out.count > STACK_MAX)) return;
+  }
 
   for (let y = 0; y < craftSize; y++)
     for (let x = 0; x < craftSize; x++) {
       const i = y * craftSize + x;
-      if (craftGrid[i]) {
-        craftGrid[i].count--;
-        if (craftGrid[i].count <= 0) craftGrid[i] = null;
+      const cell = craftGrid[i];
+      if (!cell) continue;
+
+      if (cell.durability !== undefined) {
+        // Инструмент: не расходуется, но теряет 1 прочность.
+        // Если прочность дошла до нуля — ломается.
+        cell.durability--;
+        if (cell.durability <= 0) craftGrid[i] = null;
+      } else {
+        // Обычный предмет: расходуется по одному
+        cell.count--;
+        if (cell.count <= 0) craftGrid[i] = null;
       }
     }
 
-  if (s) s.count += out.count;
-  else heldItem.value = { id: out.id, count: out.count };
+  if (s) {
+    s.count += out.count;
+  } else {
+    heldItem.value = { id: out.id, count: out.count };
+    if (isToolRecipe && toolInfo.durability !== undefined) {
+      heldItem.value.durability = toolInfo.durability;
+    }
+  }
 
   recomputeCraft();
   renderUI();
@@ -480,14 +504,14 @@ let fpsAcc = 0, fpsFrames = 0, fpsShown = 0;
 function biomeName(x, z) {
   const h = terrainHeight(Math.floor(x), Math.floor(z));
   const b = biomeAt(Math.floor(x), Math.floor(z), h);
-  if (b === BIOME_OCEAN) return 'Океан';
-  if (b === BIOME_FOREST) return 'Лес';
-  return 'Равнина';
+  return getBiomeName(b);
 }
 
-const BLOCK_NAMES = ['—','Трава','Земля','Камень','Песок','Вода','Бревно','Листва',
-  'Угольная руда','Железная руда','Медная руда','Золотая руда','Алмазная руда',
-  'Бедрок','Доски','Верстак','Печь'];
+function blockName(id) {
+  if (id === 0) return '—';
+  const d = getById(id);
+  return d ? d.name : '—';
+}
 
 export function updateInfo(dt) {
   fpsAcc += dt; fpsFrames++;
@@ -496,12 +520,12 @@ export function updateInfo(dt) {
     fpsAcc = 0; fpsFrames = 0;
   }
   const b = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.2), Math.floor(player.pos.z));
-  const blockName = BLOCK_NAMES[b] || '—';
+  const bname = blockName(b);
   infoEl.innerHTML =
     `FPS: <b>${fpsShown}</b><br>` +
     `XYZ: <b>${player.pos.x.toFixed(1)} / ${player.pos.y.toFixed(1)} / ${player.pos.z.toFixed(1)}</b><br>` +
     `Биом: <b>${biomeName(player.pos.x, player.pos.z)}</b><br>` +
-    `Под ногами: <b>${blockName}</b><br>` +
+    `Под ногами: <b>${bname}</b><br>` +
     `Мобы: <b>${mobs.length}</b> · Чанков: <b>${world.chunks.size}</b><br>` +
     `Состояние: <b>${player.flying ? 'полёт' : (player.inWater ? 'плавание' : (player.sprinting ? 'бег' : (player.crouching ? 'присед' : 'ходьба')))}</b>`;
 

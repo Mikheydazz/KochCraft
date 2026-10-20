@@ -2,18 +2,47 @@ import * as THREE from 'three';
 import {
   AIR, WATER, STONE, GRASS, DIRT, SAND, BEDROCK, LOG, LEAVES, COAL, IRON, COPPER, GOLD, DIAMOND,
   GLASS, FLOWING_WATER_1,
-  CS, WORLD_HEIGHT, SEA_LEVEL, RD_GEN, BIOME_OCEAN, BIOME_FOREST, BIOME_PLAINS,
+  CS, WORLD_HEIGHT, SEA_LEVEL, RD_GEN,
+  BIOME_OCEAN, BIOME_FOREST, BIOME_PLAINS, BIOME_DESERT, BIOME_MOUNTAINS,
   FACES, ATLAS_COLS, ATLAS_ROWS
 } from './constants.js';
 import { perlin, fbm2, hash2 } from './noise.js';
-import { BLOCK_DEFS, isWaterBlock } from './blocks.js';
-import { tryPlaceStructures } from './structures.js';
+import {
+  BLOCK_DEFS, isWaterBlock,
+  isStairsBlock, stairsOrientation, stairsMaterial, tileForStairsMaterial
+} from './blocks.js';
+import { tryPlaceStructures, applySchoolsToChunk } from './structures.js';
 import { scene, blockMaterial, waterMaterial, glassMaterial } from './scene.js';
+
+/* Насколько точка принадлежит горному региону: 0 = равнина, 1 = полноценные горы */
+function mountainFactor(wx, wz) {
+  const m = fbm2(wx * 0.004 + 2000, wz * 0.004 + 2000, 3);
+  const t = (m - 0.15) / 0.35;
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return t * t * (3 - 2 * t);   // smoothstep — плавный вход в горы
+}
 
 export function terrainHeight(wx, wz) {
   const cont  = fbm2(wx * 0.0035, wz * 0.0035, 4);
   const hills = fbm2(wx * 0.021 + 100, wz * 0.021 + 100, 3);
   let h = SEA_LEVEL + cont * 27 + hills * 4;
+
+  const mf = mountainFactor(wx, wz);
+  if (mf > 0) {
+    const mh = fbm2(wx * 0.014 + 300, wz * 0.014 + 300, 4);   // -1..1
+    let t = (mh + 1) * 0.5;                                   // 0..1
+
+    // Плоская вершина: сжимаем верхнюю часть диапазона в узкое «плато».
+    // Без сжатия получались бы острые пики, а нам нужны площадки.
+    if (t > 0.55) t = 0.55 + Math.pow(t - 0.55, 1.5) * 0.6;
+
+    const mountainH = 25 + t * 50;           // от 25 до ~61
+    const mountainY = SEA_LEVEL + mountainH;
+
+    h = h * (1 - mf) + mountainY * mf;
+  }
+
   h = Math.floor(h);
   if (h < 2) h = 2;
   if (h > WORLD_HEIGHT - 8) h = WORLD_HEIGHT - 8;
@@ -22,8 +51,18 @@ export function terrainHeight(wx, wz) {
 
 export function biomeAt(wx, wz, h) {
   if (h <= SEA_LEVEL) return BIOME_OCEAN;
+
+  // Горы — раньше пустыни и леса, чтобы доминировать над остальными
+  const mf = mountainFactor(wx, wz);
+  if (mf > 0.5) return BIOME_MOUNTAINS;
+
+  // Пустыня — крупный низкочастотный регион.
+  const d = fbm2(wx * 0.0055 + 1200, wz * 0.0055 + 1200, 3);
+  if (d > 0.28) return BIOME_DESERT;
+
+  // Лес: порог поднят с 0.05 до 0.15 — равнин стало заметно больше.
   const n = fbm2(wx * 0.008 + 500, wz * 0.008 + 500, 3);
-  return n > 0.05 ? BIOME_FOREST : BIOME_PLAINS;
+  return n > 0.15 ? BIOME_FOREST : BIOME_PLAINS;
 }
 
 function isCave(x, y, z) {
@@ -152,11 +191,13 @@ export function generateChunk(chunk) {
       const h = terrainHeight(wx, wz);
       const biome = biomeAt(wx, wz, h);
       const beach = h <= SEA_LEVEL + 1;
+      const sandy = beach || biome === BIOME_OCEAN || biome === BIOME_DESERT;
+      const rocky = biome === BIOME_MOUNTAINS;
       for (let y = 0; y <= h; y++) {
         let block;
         if (y === 0) block = BEDROCK;
-        else if (y === h) block = (beach || biome === BIOME_OCEAN) ? SAND : GRASS;
-        else if (y > h - 4) block = beach ? SAND : DIRT;
+        else if (y === h) block = rocky ? STONE : (sandy ? SAND : GRASS);
+        else if (y > h - 4) block = rocky ? STONE : (sandy ? SAND : DIRT);
         else block = STONE;
         if (block === STONE) {
           const ore = oreAt(wx, y, wz);
@@ -192,8 +233,9 @@ export function generateChunk(chunk) {
     }
   }
 
-    // ---- Структуры (домики) ----
+  // ---- Структуры ----
   tryPlaceStructures(chunk, terrainHeight, biomeAt);
+  applySchoolsToChunk(chunk, terrainHeight, biomeAt);
   // накладываем сохранённые изменения поверх процедурной генерации
   const ck = cx + ',' + cz;
   const chMap = changesByChunk.get(ck);
@@ -206,6 +248,57 @@ export function generateChunk(chunk) {
 }
 
 const PW = CS + 2, PH = WORLD_HEIGHT + 2;
+/* ============================================================
+   СТУПЕНЬКИ — строим из двух коробок, переиспользуя FACES
+   ============================================================ */
+
+/* Одна коробка с масштабом (sx, sy, sz) в точке (ox, oy, oz).
+   skipFace — массив индексов граней FACES, которые не рисуем:
+     0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z */
+function emitBoxFaces(P, N, U, I, ox, oy, oz, sx, sy, sz, tile, skipFace) {
+  const skip = skipFace || [];
+  const u0 = (tile % ATLAS_COLS) / ATLAS_COLS;
+  const v0 = Math.floor(tile / ATLAS_COLS) / ATLAS_ROWS;
+  const du = 1 / ATLAS_COLS;
+  const dv = 1 / ATLAS_ROWS;
+
+  for (let f = 0; f < 6; f++) {
+    if (skip.indexOf(f) !== -1) continue;
+    const F = FACES[f];
+    const base = P.length / 3;
+    for (let i = 0; i < 4; i++) {
+      const c = F.corners[i];
+      P.push(ox + c[0] * sx, oy + c[1] * sy, oz + c[2] * sz);
+      N.push(F.dir[0], F.dir[1], F.dir[2]);
+      const t = F.uvs[i];
+      U.push(u0 + t[0] * du, v0 + t[1] * dv);
+    }
+    I.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+}
+
+/* Ступенька = нижняя полная коробка (1 × 0.5 × 1)
+   + верхняя половинная (0.5 × 0.5 × 1 или 1 × 0.5 × 0.5).
+   Ориентация задаёт, в какой стороне находится высокая часть. */
+function emitStairs(lx, ly, lz, blockId, P, N, U, I) {
+  const orient = stairsOrientation(blockId) || 'n';
+  const mat    = stairsMaterial(blockId)    || 'stone';
+  const tile   = tileForStairsMaterial(mat);
+
+  // Нижняя коробка: 1 × 0.5 × 1
+  emitBoxFaces(P, N, U, I, lx, ly, lz, 1, 0.5, 1, tile, null);
+
+  // Верхняя коробка: половинный след
+  let ox = lx, oz = lz, sx = 1, sz = 1;
+  if (orient === 'n')      { oz = lz;       sz = 0.5; }
+  else if (orient === 's') { oz = lz + 0.5; sz = 0.5; }
+  else if (orient === 'e') { ox = lx + 0.5; sx = 0.5; }
+  else if (orient === 'w') { ox = lx;       sx = 0.5; }
+
+  // Пропускаем грань 3 (-Y): она полностью совпадает с +Y нижней коробки
+  // и без пропуска получили бы z-fighting и «мигающие» треугольники.
+  emitBoxFaces(P, N, U, I, ox, ly + 0.5, oz, sx, 0.5, sz, tile, [3]);
+}
 
 export function buildChunkMesh(chunk) {
   const pad = new Uint8Array(PW * PH * PW);
@@ -240,6 +333,12 @@ export function buildChunkMesh(chunk) {
       for (let x = 0; x < CS; x++) {
         const b = chunk.blocks[chunk.idx(x, y, z)];
         if (b === AIR) continue;
+
+        if (isStairsBlock(b)) {
+          emitStairs(x, y, z, b, pos, nor, uvs, ind);
+          continue;
+        }
+
         const isWater = isWaterBlock(b);
         const isGlass = b === GLASS;
         const def = BLOCK_DEFS[b];
@@ -269,13 +368,17 @@ export function buildChunkMesh(chunk) {
             const nbIsWater  = isWaterBlock(nbl);
             const curIsGlass = b === GLASS;
             const nbIsGlass  = nbl === GLASS;
+            const nbIsStairs = isStairsBlock(nbl);
             let render;
             if (curIsWater) {
-              render = false;
+              // вода рядом со ступенькой — рисуем её грань,
+              // иначе через вырез ступеньки видно пустоту
+              render = nbIsStairs;
             } else if (curIsGlass) {
               render = !nbIsGlass;
             } else {
-              render = nbIsWater || nbIsGlass;
+              // рядом ступенька — сосед не полный, грань нужна
+              render = nbIsWater || nbIsGlass || nbIsStairs;
             }
             if (!render) continue;
           }
@@ -389,7 +492,7 @@ export function updateChunks(px, pz) {
   }
 }
 
-export function raycastVoxel(origin, dir, maxDist) {
+export function raycastVoxel(origin, dir, maxDist, includeWater = false) {
   let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
   const stepX = dir.x > 0 ? 1 : -1;
   const stepY = dir.y > 0 ? 1 : -1;
@@ -403,11 +506,46 @@ export function raycastVoxel(origin, dir, maxDist) {
   let nx = 0, ny = 0, nz = 0, t = 0;
   for (let i = 0; i < 200; i++) {
     const b = world.getBlock(x, y, z);
-    if (b !== AIR && !isWaterBlock(b)) return { x, y, z, block: b, nx, ny, nz };
+    if (b !== AIR && (includeWater || !isWaterBlock(b))) return { x, y, z, block: b, nx, ny, nz };
     if (tmx < tmy && tmx < tmz) { x += stepX; t = tmx; tmx += tdx; nx = -stepX; ny = 0; nz = 0; }
     else if (tmy < tmz)         { y += stepY; t = tmy; tmy += tdy; nx = 0; ny = -stepY; nz = 0; }
     else                        { z += stepZ; t = tmz; tmz += tdz; nx = 0; ny = 0; nz = -stepZ; }
     if (t > maxDist) break;
+  }
+  return null;
+}
+
+/* ============================================================
+   Поиск ближайшего биома (спиральный обход по кольцам)
+   ============================================================ */
+export function findNearestBiome(px, pz, targetBiome, maxDist = 2000) {
+  const step = 8;
+  const maxR = Math.ceil(maxDist / step);
+  const pxF = Math.floor(px), pzF = Math.floor(pz);
+
+  // центр
+  if (biomeAt(pxF, pzF, terrainHeight(pxF, pzF)) === targetBiome) {
+    return { x: pxF, z: pzF };
+  }
+
+  for (let r = 1; r <= maxR; r++) {
+    const rad = r * step;
+    // верхняя и нижняя кромки
+    for (let dx = -rad; dx <= rad; dx += step) {
+      for (const dz of [-rad, rad]) {
+        const wx = Math.floor(px + dx), wz = Math.floor(pz + dz);
+        if (biomeAt(wx, wz, terrainHeight(wx, wz)) === targetBiome)
+          return { x: wx, z: wz };
+      }
+    }
+    // левая и правая кромки (без углов)
+    for (let dz = -rad + step; dz < rad; dz += step) {
+      for (const dx of [-rad, rad]) {
+        const wx = Math.floor(px + dx), wz = Math.floor(pz + dz);
+        if (biomeAt(wx, wz, terrainHeight(wx, wz)) === targetBiome)
+          return { x: wx, z: wz };
+      }
+    }
   }
   return null;
 }

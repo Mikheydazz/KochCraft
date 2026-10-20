@@ -1,15 +1,19 @@
 import * as THREE from 'three';
 import {
   AIR, WATER, BEDROCK, CS, SEA_LEVEL, BLOCK_HARDNESS, BLOCK_TOOL_REQ,
-  CRAFTING_TABLE, FURNACE, BEEF, PORK, COAL, COAL_ITEM,
-  GRASS, DIRT, CLAY, CHEST
+  CRAFTING_TABLE, FURNACE, BEEF, PORK,
+  GRASS, DIRT, CLAY, CHEST,
+  CAULDRON, CAULDRON_WATER, SAWDUST, CELLULOSE,
+  BIOME_PLAINS, BIOME_FOREST,
+  getById, getByKey, findBiomeByAlias, getBiomeName
 } from './constants.js';
 import { input } from './input.js';
 import { scene, camera, renderer, highlight } from './scene.js';
 import {
   Chunk, world, generateChunk, updateChunks, raycastVoxel, terrainHeight,
-  disposeChunk, applyChanges, clearAllChanges, getAllChanges
+  disposeChunk, applyChanges, clearAllChanges, getAllChanges, biomeAt, findNearestBiome
 } from './world.js';
+import { tryPlaceStructures, setSchoolData, findNearestStructure } from './structures.js';
 import { initPerlin } from './noise.js';
 import {
   updateDrops, spawnDrop, dropAllInventory, clearDrops
@@ -19,7 +23,10 @@ import { mobs, updateMobs, surfaceY } from './mobs.js';
 import {
   updateViewModel, triggerSwing, viewScene, viewCamera
 } from './viewmodel.js';
-import { isBlock, isWaterBlock } from './blocks.js';
+import {
+  isBlock, isWaterBlock,
+  isStairsBlock, stairsMaterial, baseStairsId
+} from './blocks.js';
 import { isTool, getTool, CREATIVE_ITEMS } from './items.js';
 import {
   selectSlot, getActiveSlot, updateInfo, refreshHotbar,
@@ -33,10 +40,24 @@ import {
   loadInventory, getInventorySnapshot
 } from './gamemode.js';
 import { initIcons } from './icons.js';
+import {
+  initChat, openChat, closeChat, isChatOpen, addChatMessage
+} from './chat.js';
 import { atlasCanvas } from './scene.js';
+import {
+  isEditing, toggleEditing, clearSelection, markCorner,
+  isSelectionComplete,
+  downloadStructureFile, placeStructureAtPlayer
+} from './structure_editor.js';
 import {
   getChestSlots, deleteChest, getAllChests, loadChests
 } from './chests.js';
+import { loadDesks, getAllDesks } from './desks.js';
+import { isBookUIOpen, closeBook } from './book_ui.js';
+import { handleDeskClick, handleBookRead, onDeskBroken } from './desk_handler.js';
+import {
+  getVatContents, setVatContents, deleteVat, getAllVats, loadVats
+} from './cauldrons.js';
 import {
   setWaterWorld, enqueueAround, tickWater, clearWaterQueue
 } from './water.js';
@@ -49,6 +70,13 @@ let mouseLeft = false;
 let mouseRight = false;
 let currentWorldId = null;
 let deathHandled = false;
+
+const BUCKET_ID       = getByKey('bucket').id;
+const WATER_BUCKET_ID = getByKey('water_bucket').id;
+const CAULDRON_ID       = getByKey('cauldron').id;
+const CAULDRON_WATER_ID = getByKey('cauldron_water').id;
+const SAWDUST_ID        = getByKey('sawdust').id;
+const CELLULOSE_ID      = getByKey('cellulose').id;
 
 /* ============================================================
    ЭЛЕМЕНТЫ UI
@@ -80,6 +108,8 @@ function giveCreativeInventory() {
     if (isTool(id)) {
       const t = getTool(id);
       slots[i] = { id, count: 1, durability: t.durability };
+    } else if (id === BUCKET_ID || id === WATER_BUCKET_ID) {
+      slots[i] = { id, count: 1 };
     } else {
       slots[i] = { id, count: 64 };
     }
@@ -222,6 +252,143 @@ document.getElementById('btnFullscreen').addEventListener('click', () => {
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
   }
 });
+
+/* ============================================================
+   ЧАТ И КОМАНДЫ
+   ============================================================ */
+function getBearing(x0, z0, x1, z1) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const deg = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+  const dirs = ['север','сев-вост','восток','юг-вост','юг','юг-зап','запад','сев-зап'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+function handleChatCommand(cmd) {
+  const parts = cmd.trim().split(/\s+/).filter(Boolean);
+  const name = (parts[0] || '').toLowerCase();
+
+  if (name === 'help' || name === 'помощь' || name === '?') {
+    addChatMessage('/find structure [school|house] — ближайшая структура', 'info');
+    addChatMessage('/find biome [plains|forest|ocean|desert|mountains] — ближайший биом', 'info');
+    return;
+  }
+
+  if (name === 'find') {
+    const what   = (parts[1] || '').toLowerCase();
+    const target = (parts[2] || '').toLowerCase();
+    if (!what || !target) {
+      addChatMessage('Использование: /find [structure|biome] [название]', 'err');
+      return;
+    }
+    if (what === 'structure' || what === 'структура' || what === 'структуры') {
+      findStructureCmd(target);
+    } else if (what === 'biome' || what === 'биом' || what === 'биомы') {
+      findBiomeCmd(target);
+    } else {
+      addChatMessage('Неизвестный тип: ' + what, 'err');
+    }
+    return;
+  }
+
+  addChatMessage('Неизвестная команда: /' + name + ' (попробуй /help)', 'err');
+}
+
+function findStructureCmd(target) {
+  let type = null, ru = '';
+  if (target === 'school' || target === 'школа') { type = 'school'; ru = 'Школа'; }
+  else if (target === 'house' || target === 'дом' || target === 'домик') { type = 'house'; ru = 'Домик'; }
+  else {
+    addChatMessage('Неизвестная структура: ' + target + ' (school, house)', 'err');
+    return;
+  }
+  addChatMessage('Ищу: ' + ru + '...', 'info');
+  setTimeout(() => {
+    const res = findNearestStructure(
+      player.pos.x, player.pos.z, type, 120, terrainHeight, biomeAt
+    );
+    if (!res) {
+      addChatMessage('Не найдено в радиусе ~1900 блоков', 'err');
+      return;
+    }
+    const dist = Math.hypot(res.x - player.pos.x, res.z - player.pos.z);
+    const brg  = getBearing(player.pos.x, player.pos.z, res.x, res.z);
+    addChatMessage(
+      `${ru}: X=${res.x} Z=${res.z} (${dist.toFixed(0)} блоков, ${brg})`, 'cmd'
+    );
+  }, 20);
+}
+
+function findBiomeCmd(target) {
+  const biome = findBiomeByAlias(target);
+  if (!biome) {
+    addChatMessage('Неизвестный биом: ' + target, 'err');
+    return;
+  }
+  const id = biome.id;
+  const ru = getBiomeName(id);
+  addChatMessage('Ищу: ' + ru + '...', 'info');
+  setTimeout(() => {
+    const res = findNearestBiome(player.pos.x, player.pos.z, id, 2000);
+    if (!res) {
+      addChatMessage('Не найдено в радиусе 2000 блоков', 'err');
+      return;
+    }
+    const dist = Math.hypot(res.x - player.pos.x, res.z - player.pos.z);
+    const brg  = getBearing(player.pos.x, player.pos.z, res.x, res.z);
+    addChatMessage(
+      `${ru}: X=${res.x} Z=${res.z} (${dist.toFixed(0)} блоков, ${brg})`, 'cmd'
+    );
+  }, 20);
+}
+
+initChat({
+  onClose: () => {
+    setTimeout(() => {
+      if (currentWorldId && !player.dead && !isInventoryOpen()) {
+        tryAcquirePointer();
+      }
+    }, 60);
+  },
+  onCommand: handleChatCommand
+});
+
+/* ---- Кнопки редактора структур ---- */
+document.getElementById('structSave').addEventListener('click', () => {
+  const name = (document.getElementById('structName').value || 'structure').trim();
+  if (downloadStructureFile(name)) {
+    // Небольшая пауза, потом очищаем выделение
+    setTimeout(() => clearSelection(), 300);
+  }
+});
+
+document.getElementById('structClear').addEventListener('click', () => clearSelection());
+
+document.getElementById('structLoad').addEventListener('click', () => {
+  document.getElementById('structFile').click();
+});
+
+document.getElementById('structFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      // Ставим структуру перед игроком
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const px = player.pos.x + dir.x * 3;
+      const py = player.pos.y;
+      const pz = player.pos.z + dir.z * 3;
+      placeStructureAtPlayer(data, px, py, pz);
+      alert('Структура «' + (data.name || 'без имени') + '» вставлена в мир.');
+    } catch (err) {
+      alert('Ошибка чтения файла: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
 document.getElementById('btnPauseMode').addEventListener('click', () => { toggleMode(); });
 document.getElementById('btnSaveQuit').addEventListener('click', () => {
   saveCurrentWorld();
@@ -269,13 +436,18 @@ function startWorld(meta) {
     else resetInventoryForMode();
     loadFurnaceSnapshot(state.furnace || null);
     loadChests(state.chests || []);
+    loadVats(state.cauldrons || []);
+    loadDesks(state.desks || []);
   } else {
     clearAllChanges();
     clearDrops();
     let sx = 8, sz = 8;
-    for (let r = 0; r < 400; r += 4) {
+    for (let r = 0; r < 800; r += 4) {
       const h = terrainHeight(r, 0);
-      if (h > SEA_LEVEL + 2) { sx = r; sz = 0; break; }
+      const b = biomeAt(r, 0, h);
+      if (h > SEA_LEVEL + 2 && (b === BIOME_PLAINS || b === BIOME_FOREST)) {
+        sx = r; sz = 0; break;
+      }
     }
     player.pos.set(sx + 0.5, terrainHeight(sx, sz) + 4, sz + 0.5);
     player.yaw = 0;
@@ -290,6 +462,8 @@ function startWorld(meta) {
     resetInventoryForMode();
     loadFurnaceSnapshot(null);
     loadChests([]);
+    loadVats([]);
+    loadDesks([]);
   }
 
   const scx = Math.floor(player.pos.x / CS), scz = Math.floor(player.pos.z / CS);
@@ -328,7 +502,9 @@ function saveCurrentWorld() {
     inventory: getInventorySnapshot(),
     blockChanges: getAllChanges(),
     furnace: getFurnaceSnapshot(),
-    chests: getAllChests()
+    chests: getAllChests(),
+    cauldrons: getAllVats(),
+    desks: getAllDesks()
   };
   saveWorld(currentWorldId, state);
 }
@@ -358,7 +534,7 @@ document.addEventListener('pointerlockchange', () => {
   input.pointerLocked = document.pointerLockElement === renderer.domElement;
   if (!input.pointerLocked) {
     mouseLeft = false; mouseRight = false; resetBreaking();
-    if (currentWorldId && !player.dead && !isInventoryOpen()) {
+    if (currentWorldId && !player.dead && !isInventoryOpen() && !isChatOpen() && !isBookUIOpen()) {
       showPause();
     }
   } else {
@@ -444,9 +620,24 @@ function currentTool() {
   return getTool(s.id);
 }
 
-const BLOCK_DROPS = { [COAL]: COAL_ITEM };
+import { allBlocks } from './registry.js';
+
+function idForStairs(material, orientation) {
+  for (const d of allBlocks()) {
+    if (d.stairs && d.material === material && d.orientation === orientation) return d.id;
+  }
+  return null;
+}
 function blockDrop(blockId) {
-  return BLOCK_DROPS[blockId] !== undefined ? BLOCK_DROPS[blockId] : blockId;
+  if (blockId === CAULDRON_WATER_ID) return CAULDRON_ID;
+  if (blockId === getByKey('school_desk_book').id) return getByKey('school_desk').id;
+  if (isStairsBlock(blockId)) return baseStairsId(blockId);
+  const d = getById(blockId);
+  if (d && d.drop && d.drop !== 'self') {
+    const item = getByKey(d.drop);
+    if (item) return item.id;
+  }
+  return blockId;
 }
 
 function updateBreaking(dt, hit) {
@@ -474,6 +665,21 @@ function updateBreaking(dt, hit) {
           hit.x + 0.5, hit.y + 0.6, hit.z + 0.5, s.durability);
       }
       deleteChest(hit.x, hit.y, hit.z);
+    }
+
+    // чан — выкидываем содержимое
+    if (blockId === CAULDRON_ID || blockId === CAULDRON_WATER_ID) {
+      const vat = getVatContents(hit.x, hit.y, hit.z);
+      if (vat.contents) {
+        spawnDrop(vat.contents.id, vat.contents.count,
+          hit.x + 0.5, hit.y + 0.6, hit.z + 0.5);
+      }
+      deleteVat(hit.x, hit.y, hit.z);
+    }
+
+        // парта с книгой — книга вылетает отдельно
+    if (blockId === getByKey('school_desk_book').id) {
+      onDeskBroken(hit.x, hit.y, hit.z);
     }
 
     world.setBlock(hit.x, hit.y, hit.z, AIR);
@@ -517,6 +723,74 @@ function eatFood(id) {
   forceRenderHearts();
 }
 
+function handleCauldronClick(hit) {
+  const x = hit.x, y = hit.y, z = hit.z;
+  const isWater = hit.block === CAULDRON_WATER_ID;
+  const vat = getVatContents(x, y, z);
+  const slot = getActiveSlot();
+  const held = slots[slot];
+
+  // 1. Пустая рука → забрать всё
+  if (!held) {
+    if (vat.contents) {
+      invAdd(vat.contents.id, vat.contents.count);
+      setVatContents(x, y, z, null);
+      refreshHotbar();
+    }
+    return;
+  }
+
+  // 2. Ведро с водой на пустой чан → налить воду
+  if (held.id === WATER_BUCKET_ID && !isWater) {
+    world.setBlock(x, y, z, CAULDRON_WATER_ID);
+    if (held.count === 1) {
+      held.id = BUCKET_ID;
+    } else {
+      held.count--;
+      invAdd(BUCKET_ID, 1);
+    }
+    // Если в сухом чану лежали опилки — они становятся целлюлозой
+    if (vat.contents && vat.contents.id === SAWDUST_ID) {
+      setVatContents(x, y, z, { id: CELLULOSE_ID, count: vat.contents.count });
+    }
+    refreshHotbar();
+    return;
+  }
+
+  // 3. Пустое ведро на чан с водой → забрать воду
+  if (held.id === BUCKET_ID && isWater) {
+    if (held.count === 1) {
+      held.id = WATER_BUCKET_ID;
+    } else {
+      held.count--;
+      invAdd(WATER_BUCKET_ID, 1);
+    }
+    world.setBlock(x, y, z, CAULDRON_ID);
+    refreshHotbar();
+    return;
+  }
+
+  // 4. Ведро в руках на чан — больше ничего не делаем
+  if (held.id === BUCKET_ID || held.id === WATER_BUCKET_ID) return;
+
+  // 5. Положить предмет (стек целиком)
+  // Если в чане вода и кладут опилки — они становятся целлюлозой
+  let targetId = held.id;
+  if (isWater && held.id === SAWDUST_ID) targetId = CELLULOSE_ID;
+
+  if (!vat.contents) {
+    setVatContents(x, y, z, { id: targetId, count: held.count });
+    slots[slot] = null;
+  } else if (vat.contents.id === targetId && vat.contents.count < 64) {
+    const add = Math.min(held.count, 64 - vat.contents.count);
+    vat.contents.count += add;
+    held.count -= add;
+    if (held.count <= 0) slots[slot] = null;
+    setVatContents(x, y, z, vat.contents);
+  }
+  refreshHotbar();
+}
+
 function tryPlaceOrUse(hit) {
   if (hit.block === CRAFTING_TABLE) { openUI('crafting'); return; }
   if (hit.block === FURNACE)        { openUI('furnace');  return; }
@@ -537,8 +811,21 @@ function tryPlaceOrUse(hit) {
   if (!s) return;
   if (!isBlock(s.id)) return;
 
+  // Ступеньки ориентируем по взгляду игрока
+  let placeId = s.id;
+  if (isStairsBlock(s.id)) {
+    const fx = -Math.sin(player.yaw);
+    const fz = -Math.cos(player.yaw);
+    let facing;
+    if (Math.abs(fx) > Math.abs(fz)) facing = fx > 0 ? 'e' : 'w';
+    else                            facing = fz > 0 ? 's' : 'n';
+    const material = stairsMaterial(s.id);
+    const newId = idForStairs(material, facing);
+    if (newId) placeId = newId;
+  }
+
   if (getMode() === GameMode.SURVIVAL) invRemoveFromSlot(i, 1);
-  world.setBlock(px, py, pz, s.id);
+  world.setBlock(px, py, pz, placeId);
   refreshHotbar();
 }
 
@@ -546,7 +833,33 @@ function tryPlaceOrUse(hit) {
    УПРАВЛЕНИЕ
    ============================================================ */
 addEventListener('keydown', (e) => {
+  // Пока открыта книга — перехватываем всё, кроме Escape,
+  // и не пускаем клавиши в игровой input.
+  if (isBookUIOpen()) {
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      closeBook();
+      setTimeout(() => {
+        if (!input.pointerLocked && !isInventoryOpen() && !isChatOpen() &&
+            currentWorldId && !player.dead) {
+          showPause();
+        }
+      }, 150);
+    }
+    return;
+  }
+
   input.keys[e.code] = true;
+
+  if (isChatOpen()) return;
+
+  if (e.code === 'KeyT') {
+    e.preventDefault();
+    if (!currentWorldId || player.dead) return;
+    openChat();
+    if (document.pointerLockElement) document.exitPointerLock();
+    return;
+  }
 
     // Пытаемся перехватить опасные браузерные шорткаты,
   // чтобы игрок случайно не закрыл вкладку/не перезагрузил страницу.
@@ -575,7 +888,15 @@ addEventListener('keydown', (e) => {
     else openUI('inventory');
     return;
   }
+    if (e.code === 'Escape' && isChatOpen()) {
+    closeChat();
+    return;
+  }
   if (e.code === 'Escape') {
+    if (isEditing()) {
+      toggleEditing();
+      return;
+    }
     if (isInventoryOpen()) {
       closeUI({ skipLock: true });
       showPause();
@@ -606,6 +927,14 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && getMode() === GameMode.CREATIVE) {
     player.flying = !player.flying;
   }
+    if (e.code === 'KeyG') {
+    e.preventDefault();
+    const on = toggleEditing();
+    if (on && document.pointerLockElement !== renderer.domElement) {
+      tryAcquirePointer();
+    }
+    return;
+  }
   if (e.code.startsWith('Digit')) {
     const n = parseInt(e.code.slice(5), 10);
     if (n >= 1 && n <= HOTBAR_SIZE) selectSlot(n - 1);
@@ -627,9 +956,48 @@ document.addEventListener('mousemove', (e) => {
 const raycaster = new THREE.Raycaster();
 
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (!input.pointerLocked || isInventoryOpen()) return;
+  if (!input.pointerLocked || isInventoryOpen() || isBookUIOpen()) return;
   if (e.button === 0) mouseLeft = true;
   if (e.button === 2) mouseRight = true;
+  // Режим редактора структур
+  if (isEditing()) {
+    const hitSel = raycastVoxel(
+      camera.position,
+      camera.getWorldDirection(new THREE.Vector3()),
+      12
+    );
+
+    if (!isSelectionComplete()) {
+      /* Фаза выделения: ЛКМ ставит угол, ПКМ сбрасывает */
+      if (e.button === 0 && hitSel) {
+        markCorner(hitSel.x, hitSel.y, hitSel.z);
+      } else if (e.button === 2) {
+        clearSelection();
+      }
+      return;
+    }
+
+    /* Фаза редактирования: ЛКМ ломает, ПКМ ставит */
+    if (e.button === 0 && hitSel) {
+      world.setBlock(hitSel.x, hitSel.y, hitSel.z, AIR);
+      triggerSwing();
+      return;
+    }
+    if (e.button === 2 && hitSel) {
+      const s = slots[getActiveSlot()];
+      if (s && isBlock(s.id)) {
+        const px = hitSel.x + hitSel.nx;
+        const py = hitSel.y + hitSel.ny;
+        const pz = hitSel.z + hitSel.nz;
+        const cur = world.getBlock(px, py, pz);
+        if (cur === AIR || isWaterBlock(cur)) {
+          world.setBlock(px, py, pz, s.id);
+        }
+      }
+      return;
+    }
+    return;
+  }
   triggerSwing();
 
   if (e.button === 0) {
@@ -652,14 +1020,95 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
   }
 
+  // ---- Ведро и чан (ПКМ) ----
+  if (e.button === 2) {
+    // Особый случай: клик по чану
+    const hitVat = raycastVoxel(
+      camera.position,
+      camera.getWorldDirection(new THREE.Vector3()),
+      6
+    );
+    if (hitVat && (hitVat.block === CAULDRON_ID || hitVat.block === CAULDRON_WATER_ID)) {
+      handleCauldronClick(hitVat);
+      return;
+    }
+
+    const sBucket = slots[getActiveSlot()];
+
+    // Пустое ведро + вода → набираем источник
+    if (sBucket && sBucket.id === BUCKET_ID) {
+      const hitW = raycastVoxel(
+        camera.position,
+        camera.getWorldDirection(new THREE.Vector3()),
+        6,
+        true                    // ← останавливаемся и на воде
+      );
+      if (hitW && hitW.block === WATER) {
+        let ok = true;
+        if (sBucket.count > 1) {
+          ok = invAdd(WATER_BUCKET_ID, 1);   // нужно место под новое ведро
+        }
+        if (ok) {
+          world.setBlock(hitW.x, hitW.y, hitW.z, AIR);
+          if (sBucket.count === 1) sBucket.id = WATER_BUCKET_ID;
+          else sBucket.count--;
+          refreshHotbar();
+        }
+      }
+      return;
+    }
+
+    // Ведро с водой + воздух → ставим источник
+    if (sBucket && sBucket.id === WATER_BUCKET_ID) {
+      const hitP = raycastVoxel(
+        camera.position,
+        camera.getWorldDirection(new THREE.Vector3()),
+        6
+      );
+      if (hitP) {
+        const px = hitP.x + hitP.nx;
+        const py = hitP.y + hitP.ny;
+        const pz = hitP.z + hitP.nz;
+        if (world.getBlock(px, py, pz) === AIR) {
+          world.setBlock(px, py, pz, WATER);
+          if (sBucket.count === 1) sBucket.id = BUCKET_ID;
+          else {
+            sBucket.count--;
+            invAdd(BUCKET_ID, 1);
+          }
+          refreshHotbar();
+        }
+      }
+      return;
+    }
+  }
+
   const hit = raycastVoxel(camera.position, camera.getWorldDirection(new THREE.Vector3()), 6);
   if (!hit) return;
 
   if (e.button === 0) {
     if (getMode() === GameMode.CREATIVE && hit.block !== BEDROCK) {
+      if (hit.block === CAULDRON_ID || hit.block === CAULDRON_WATER_ID) {
+        const vat = getVatContents(hit.x, hit.y, hit.z);
+        if (vat.contents) {
+          spawnDrop(vat.contents.id, vat.contents.count,
+            hit.x + 0.5, hit.y + 0.6, hit.z + 0.5);
+        }
+        deleteVat(hit.x, hit.y, hit.z);
+      }
+      if (hit.block === getByKey('school_desk_book').id) {
+        onDeskBroken(hit.x, hit.y, hit.z);
+      }
       world.setBlock(hit.x, hit.y, hit.z, AIR);
     }
   } else if (e.button === 2) {
+    // === Парта и книга ===
+    const dirDesk = camera.getWorldDirection(new THREE.Vector3());
+    const hitDesk = raycastVoxel(camera.position, dirDesk, 6);
+    if (handleDeskClick(hitDesk, tryAcquirePointer)) return;
+    if (handleBookRead(tryAcquirePointer)) return;
+
+    // === Остальное ПКМ ===
     const s = slots[getActiveSlot()];
     if (s && (s.id === BEEF || s.id === PORK)) { eatFood(s.id); return; }
     if (hit) tryPlaceOrUse(hit);
@@ -672,7 +1121,7 @@ renderer.domElement.addEventListener('mouseup', (e) => {
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 renderer.domElement.addEventListener('wheel', (e) => {
-  if (!input.pointerLocked || isInventoryOpen()) return;
+  if (!input.pointerLocked || isInventoryOpen() || isBookUIOpen()) return;
   e.preventDefault();
   const dir = e.deltaY > 0 ? 1 : -1;
   const n = (getActiveSlot() + dir + HOTBAR_SIZE) % HOTBAR_SIZE;
@@ -691,8 +1140,11 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
   const invOpen = isInventoryOpen();
+  const chatOpen = isChatOpen();
+  const bookOpen = isBookUIOpen();
+  const uiOpen = invOpen || chatOpen || bookOpen;
 
-  if (input.pointerLocked && !invOpen) updatePlayer(dt);
+  if (input.pointerLocked && !uiOpen) updatePlayer(dt);
   else {
     const eyeH = player.crouching ? 1.32 : 1.62;
     camera.position.set(player.pos.x, player.pos.y + eyeH, player.pos.z);
@@ -707,14 +1159,14 @@ function animate() {
 
   camera.getWorldDirection(forwardVec);
   const hit = raycastVoxel(camera.position, forwardVec, 6);
-  if (hit && !invOpen && input.pointerLocked) {
+  if (hit && !uiOpen && input.pointerLocked) {
     highlight.visible = true;
     highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
   } else {
     highlight.visible = false;
   }
 
-  if (getMode() === GameMode.SURVIVAL && input.pointerLocked && !invOpen) {
+  if (getMode() === GameMode.SURVIVAL && input.pointerLocked && !uiOpen) {
     updateBreaking(dt, hit);
   } else if (breaking.active) {
     resetBreaking();
@@ -744,12 +1196,27 @@ function animate() {
 /* ============================================================
    СТАРТ
    ============================================================ */
-(function init() {
+async function loadSchoolData() {
+  try {
+    const res = await fetch('./school.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    setSchoolData(data);
+    console.log('school.json загружен, размер:', data.size);
+  } catch (e) {
+    console.warn('school.json не найден или битый — использую встроенную школу.', e.message);
+  }
+}
+
+(async function init() {
   initIcons(atlasCanvas);
 
   // Подключаем воду к миру
   setWaterWorld(world);
   worldEvents.onBlockChange = (x, y, z) => enqueueAround(x, y, z);
+
+  // Загружаем school.json ДО старта мира, чтобы генерация чанков его учла.
+  await loadSchoolData();
 
   showMainMenu();
   animate();

@@ -47,3 +47,42 @@ export const allTools  = () => allDefs().filter(d => d.type === 'tool');
 export const isBlock = (id) => byId.get(id)?.type === 'block';
 export const isTool  = (id) => byId.get(id)?.type === 'tool';
 export const isItem  = (id) => byId.get(id)?.type === 'item';
+
+/* ============================================================
+   БИОМЫ (отдельное пространство имён — не конфликтуют с блоками)
+   ============================================================ */
+const biomeById = new Map();
+const biomeByKey = new Map();
+
+export function registerBiome(def) {
+  def.type = 'biome';
+  if (biomeById.has(def.id))  throw new Error(`Дублирующийся biome id: ${def.id}`);
+  if (biomeByKey.has(def.key)) throw new Error(`Дублирующийся biome key: "${def.key}"`);
+  biomeById.set(def.id, def);
+  biomeByKey.set(def.key, def);
+  return def.id;
+}
+
+export const getBiomeById  = (id)  => biomeById.get(id);
+export const getBiomeByKey = (key) => biomeByKey.get(key);
+export const allBiomes     = ()    => [...biomeById.values()];
+
+export const getBiomeName = (id) => {
+  const d = biomeById.get(id);
+  return d ? d.name : '—';
+};
+
+/* Ищет биом по ключу, английскому или русскому имени, регистронезависимо */
+export const findBiomeByAlias = (text) => {
+  const t = String(text).toLowerCase().trim();
+  for (const d of biomeById.values()) {
+    if (d.key.toLowerCase() === t) return d;
+    if (d.name.toLowerCase() === t) return d;
+    if (d.aliases) {
+      for (const a of d.aliases) {
+        if (a.toLowerCase() === t) return d;
+      }
+    }
+  }
+  return null;
+};

@@ -15,7 +15,7 @@ const MAT_RU  = { wood: 'деревянная', stone: 'каменная', coppe
                   iron: 'железная', gold: 'золотая', diamond: 'алмазная' };
 const BASE_DMG = { pickaxe: 2, axe: 3, shovel: 2, sword: 4 };
 
-export const TOOLS_BY_KEY = {};
+const TOOLS_BY_KEY = {};
 
 for (const m of MATS) {
   TYPES.forEach((t, i) => {
@@ -31,29 +31,57 @@ for (const m of MATS) {
     });
   });
 }
+/* ============================================================
+   Ручка — «инструмент» для будущего функционала (письмо/чернила)
+   ============================================================ */
+function drawPen(ctx, s) {
+  const cx = s / 2;
+  ctx.save();
+  ctx.translate(cx, cx);
+  ctx.rotate(-Math.PI / 4);
 
-/* Именованные экспорты для обратной совместимости */
-export const WOODEN_PICKAXE  = TOOLS_BY_KEY.wood_pickaxe;
-export const WOODEN_AXE      = TOOLS_BY_KEY.wood_axe;
-export const WOODEN_SHOVEL   = TOOLS_BY_KEY.wood_shovel;
-export const WOODEN_SWORD    = TOOLS_BY_KEY.wood_sword;
-export const STONE_PICKAXE   = TOOLS_BY_KEY.stone_pickaxe;
-export const STONE_AXE       = TOOLS_BY_KEY.stone_axe;
-export const STONE_SHOVEL    = TOOLS_BY_KEY.stone_shovel;
-export const STONE_SWORD     = TOOLS_BY_KEY.stone_sword;
-export const COPPER_PICKAXE  = TOOLS_BY_KEY.copper_pickaxe;
-export const COPPER_AXE      = TOOLS_BY_KEY.copper_axe;
-export const COPPER_SHOVEL   = TOOLS_BY_KEY.copper_shovel;
-export const COPPER_SWORD    = TOOLS_BY_KEY.copper_sword;
-export const IRON_PICKAXE    = TOOLS_BY_KEY.iron_pickaxe;
-export const IRON_AXE        = TOOLS_BY_KEY.iron_axe;
-export const IRON_SHOVEL     = TOOLS_BY_KEY.iron_shovel;
-export const IRON_SWORD      = TOOLS_BY_KEY.iron_sword;
-export const GOLD_PICKAXE    = TOOLS_BY_KEY.gold_pickaxe;
-export const GOLD_AXE        = TOOLS_BY_KEY.gold_axe;
-export const GOLD_SHOVEL     = TOOLS_BY_KEY.gold_shovel;
-export const GOLD_SWORD      = TOOLS_BY_KEY.gold_sword;
-export const DIAMOND_PICKAXE = TOOLS_BY_KEY.diamond_pickaxe;
-export const DIAMOND_AXE     = TOOLS_BY_KEY.diamond_axe;
-export const DIAMOND_SHOVEL  = TOOLS_BY_KEY.diamond_shovel;
-export const DIAMOND_SWORD   = TOOLS_BY_KEY.diamond_sword;
+  const bodyW = s * 0.14;
+  const bodyTop = -s * 0.32;
+  const bodyBot = s * 0.28;
+
+  ctx.fillStyle = '#c8c8d0';
+  ctx.beginPath();
+  ctx.moveTo(-bodyW * 0.4, bodyTop);
+  ctx.lineTo(bodyW * 0.4, bodyTop);
+  ctx.lineTo(0, bodyTop - s * 0.14);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#0a0a18';
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.012, bodyTop - s * 0.06);
+  ctx.lineTo(s * 0.012, bodyTop - s * 0.06);
+  ctx.lineTo(0, bodyTop - s * 0.14);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#b8b8c0';
+  ctx.fillRect(-bodyW * 0.55, bodyTop - s * 0.02, bodyW * 1.1, s * 0.05);
+
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(-bodyW / 2, bodyTop, bodyW, bodyBot - bodyTop);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.fillRect(-bodyW * 0.35, bodyTop + 2, bodyW * 0.18, bodyBot - bodyTop - 4);
+
+  ctx.fillStyle = '#2a2a30';
+  ctx.fillRect(-bodyW / 2 - s * 0.005, bodyBot, bodyW + s * 0.01, s * 0.035);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-bodyW / 2, bodyTop, bodyW, bodyBot - bodyTop);
+
+  ctx.restore();
+}
+
+export const PEN = registerTool({
+  id: 80, key: 'pen', name: 'Ручка', type: 'pen',
+  material: 'iron', tier: 0, durability: 100,
+  damage: 0, speed: 1, color: '#1a1a1a',
+  icon: drawPen
+});

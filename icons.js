@@ -36,10 +36,11 @@ function buildIconCanvas(id) {
   const def = getById(id);
   if (!def) return cv;
 
-  if (def.type === 'block')      drawBlockIcon(ctx, size, def);
-  else if (def.type === 'tool')  drawToolIcon(ctx, size, def);
-  else if (def.icon)             def.icon(ctx, size);
-  else                           drawFallback(ctx, size, def);
+  if (def.type === 'block' && def.stairs) drawStairsIcon(ctx, size, def);
+  else if (def.type === 'block')          drawBlockIcon(ctx, size, def);
+  else if (def.type === 'tool')           drawToolIcon(ctx, size, def);
+  else if (def.icon)                      def.icon(ctx, size);
+  else                                    drawFallback(ctx, size, def);
 
   return cv;
 }
@@ -69,6 +70,83 @@ function drawBlockIcon(ctx, size, def) {
   drawFace(ctx, def.top, A, [B[0] - A[0], B[1] - A[1]], [D[0] - A[0], D[1] - A[1]], 0);
 }
 
+function drawStairsIcon(ctx, size, def) {
+  const cx = size / 2;
+  const topY = size * 0.14;
+  const hw = size * 0.36;
+  const qh = size * 0.19;
+  const half = size * 0.18;   // высота одного слоя ступеньки
+
+  // Геометрия:
+  //   A — верхний угол верхнего ромба
+  //   B — правый угол верхнего ромба
+  //   C — нижний угол верхнего ромба
+  //   D — левый угол верхнего ромба
+  // Опускаем на half: получаем второй ряд, ещё на half — основание.
+  const A  = [cx, topY];
+  const B  = [cx + hw, topY + qh];
+  const C  = [cx, topY + 2 * qh];
+  const D  = [cx - hw, topY + qh];
+  const A2 = [A[0], A[1] + half];
+  const B2 = [B[0], B[1] + half];
+  const C2 = [C[0], C[1] + half];
+  const D2 = [D[0], D[1] + half];
+  const A3 = [A[0], A[1] + 2 * half];
+  const B3 = [B[0], B[1] + 2 * half];
+  const C3 = [C[0], C[1] + 2 * half];
+  const D3 = [D[0], D[1] + 2 * half];
+
+  // Верхний слой — только левая половина (показательно, как ступенька)
+  // Рисуем верхнюю грань верхнего слоя (ромб D-A-C?), но только левая половина:
+  //   D, A, середина AC, середина DC
+  const midAC = [(A[0] + C[0]) / 2, (A[1] + C[1]) / 2];
+  const midDC = [(D[0] + C[0]) / 2, (D[1] + C[1]) / 2];
+  // Оставим только верхнюю грань верхнего слоя (левая половина ромба)
+  // и верхнюю грань нижнего слоя (правая половина ромба).
+
+  // --- Верхний слой (левая часть) ---
+  // Верхняя грань (левая половина): D-A-середина AC-середина DC
+  drawQuad(ctx, def.top, D, A, midAC, midDC, 0);
+  // Левая грань верхнего слоя: D-D2-D3-D3+D
+  drawQuad(ctx, def.side, D, D2, [D2[0], D2[1] + half], [D[0], D[1] + half], 0.22);
+  // Передняя левая грань верхнего слоя: D-середина DC-...  
+  drawQuad(ctx, def.front !== undefined ? def.front : def.side,
+           midDC, D, D2, [midDC[0], midDC[1] + half], 0.32);
+
+  // --- Нижний слой (полный) ---
+  // Верхняя грань нижнего слоя (видимая правая часть): midAC-C-midDC+?
+  // Строим ромб нижнего слоя: A2-B2-C2-D2
+  // Правая верхняя часть ромба — A2-B2-C2-midAC2... сложно.
+  // Упростим: нарисуем верхнюю грань нижнего слоя целиком, но поверх неё уже
+  // лежит верхний слой слева — перекроется.
+  drawQuad(ctx, def.top, D2, A2, C2, [D2[0], D2[1]], 0.10);   // вся верхняя грань нижнего слоя
+
+  // Левая грань нижнего слоя
+  drawQuad(ctx, def.side, D2, D3, [D3[0], D3[1] + half], [D2[0], D2[1] + half], 0.32);
+  // Передняя грань нижнего слоя (левая половина): D2-? 
+  // Правая грань нижнего слоя
+  drawQuad(ctx, def.side, B2, C2, C3, B3, 0.18);
+  // Передняя правая грань (B2-C2):
+  drawQuad(ctx, def.front !== undefined ? def.front : def.side,
+           B2, C2, C3, B3, 0.30);
+}
+
+function drawQuad(ctx, tile, p1, p2, p3, p4, shade) {
+  // Проецируем четырёхугольник через setTransform по двум векторам от p1.
+  const u = [p2[0] - p1[0], p2[1] - p1[1]];
+  const v = [p4[0] - p1[0], p4[1] - p1[1]];
+  const a = u[0] / 16, b = u[1] / 16;
+  const c = v[0] / 16, d = v[1] / 16;
+  const sx = (tile % ATLAS_COLS) * 16;
+  const sy = Math.floor(tile / ATLAS_COLS) * 16;
+  ctx.save();
+  ctx.setTransform(a, b, c, d, p1[0], p1[1]);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(atlasRef, sx, sy, 16, 16, 0, 0, 16, 16);
+  if (shade > 0) { ctx.fillStyle = `rgba(0,0,0,${shade})`; ctx.fillRect(0,0,16,16); }
+  ctx.restore();
+}
+
 function drawFace(ctx, tile, P, u, v, shade) {
   const a = u[0] / 16, b = u[1] / 16;
   const c = v[0] / 16, d = v[1] / 16;
@@ -84,6 +162,9 @@ function drawFace(ctx, tile, P, u, v, shade) {
 
 /* ---------- Инструменты ---------- */
 function drawToolIcon(ctx, size, def) {
+  // Если у инструмента задана кастомная иконка — используем её.
+  if (def.icon) { def.icon(ctx, size); return; }
+
   const col = def.color;
   const t = def.toolType;
   const wood = '#6b3f14', woodHi = '#a06a2a';
