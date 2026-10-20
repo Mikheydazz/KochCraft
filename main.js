@@ -534,6 +534,7 @@ document.addEventListener('pointerlockchange', () => {
   input.pointerLocked = document.pointerLockElement === renderer.domElement;
   if (!input.pointerLocked) {
     mouseLeft = false; mouseRight = false; resetBreaking();
+    input.keys = {}; // <--- добавлено
     if (currentWorldId && !player.dead && !isInventoryOpen() && !isChatOpen() && !isBookUIOpen()) {
       showPause();
     }
@@ -942,7 +943,12 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault();
 });
 addEventListener('keyup', (e) => { input.keys[e.code] = false; });
-addEventListener('blur', () => { mouseLeft = false; mouseRight = false; resetBreaking(); });
+addEventListener('blur', () => {
+  mouseLeft = false;
+  mouseRight = false;
+  resetBreaking();
+  input.keys = {}; // Сбрасываем зажатые клавиши при потере фокуса
+});
 
 document.addEventListener('mousemove', (e) => {
   if (!input.pointerLocked || isInventoryOpen()) return;
